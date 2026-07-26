@@ -1,0 +1,18 @@
+{
+  "schemaVersion": 1,
+  "repositoryId": "example.relay.extensions",
+  "signature": "UNSIGNED_TEMPLATE_DO_NOT_TRUST",
+  "extensions": [
+    {
+      "id": "example.relay.source",
+      "name": "Example Relay Source",
+      "version": "1.0.0",
+      "kind": "SOURCE",
+      "api": { "minimum": 1, "maximum": 1 },
+      "artifactUrl": "https://example.invalid/relay/example.relay.source-macos-arm64",
+      "sha256": "REPLACE_WITH_ARTIFACT_SHA256",
+      "artifactSizeBytes": 1,
+      "permissions": ["NETWORK"]
+    }
+  ]
+}

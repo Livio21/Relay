@@ -1,0 +1,23 @@
+{
+  "schemaVersion": 1,
+  "id": "relay.theme.zune",
+  "name": "Zune",
+  "colors": {
+    "ink": "#0B0B0B",
+    "panel": "#151515",
+    "line": "#454545",
+    "paper": "#F4F4F4",
+    "muted": "#A8A8A8",
+    "signal": "#FF4F00",
+    "danger": "#FF453A"
+  },
+  "presentation": {
+    "libraryLayout": "LIST",
+    "playerLayout": "STANDARD",
+    "background": "ARTWORK_BLEED",
+    "effects": [
+      { "kind": "GRAIN", "strength": 0.2 },
+      { "kind": "VIGNETTE", "strength": 0.3 }
+    ]
+  }
+}

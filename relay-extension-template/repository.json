@@ -1,0 +1,8 @@
+{
+  "schemaVersion": 1,
+  "repositoryId": "example.relay.extensions",
+  "name": "Example Relay Extensions",
+  "indexUrl": "https://example.invalid/relay/index.json",
+  "signingAlgorithm": "ECDSA_P256_SHA256",
+  "signingPublicKey": "REPLACE_WITH_BASE64_P256_SUBJECT_PUBLIC_KEY"
+}

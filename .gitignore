@@ -1,0 +1,34 @@
+.gradle/
+build/
+**/build/
+.kotlin/
+
+.idea/
+.DS_Store
+*.iml
+*.ipr
+*.iws
+
+local.properties
+*.jks
+*.keystore
+*.p12
+*.pem
+
+*.xcuserstate
+xcuserdata/
+DerivedData/
+
+# Local tooling and generated inspection output.
+.agents/
+.claude/
+.junie/
+graphify-out/
+test.html
+__pycache__/
+*.py[cod]
+
+# Published independently; do not add nested repositories as Git links.
+relay-themes/
+relay-extensions/
+relay-android-extension-template/
