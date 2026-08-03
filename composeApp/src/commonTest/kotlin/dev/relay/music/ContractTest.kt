@@ -2,6 +2,7 @@ package dev.relay.music
 
 import dev.relay.music.model.Track
 import dev.relay.music.model.MetadataOverride
+import dev.relay.music.model.isMeaningfulMetadata
 import dev.relay.music.model.withMetadataOverride
 import dev.relay.music.lastfm.ScrobbleRule
 import dev.relay.music.lastfm.ScrobbleListenTimer
@@ -11,6 +12,8 @@ import dev.relay.music.playback.PlaybackState
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertNull
+import kotlin.test.assertFalse
+import kotlin.test.assertTrue
 
 class ContractTest {
     private val tracks = listOf(
@@ -113,5 +116,13 @@ class ContractTest {
         assertEquals("Correct artist", corrected.artist)
         assertEquals(4, corrected.trackNumber)
         assertEquals(2, corrected.discNumber)
+    }
+
+    @Test
+    fun displayFallbacksAreNotTrackerMetadata() {
+        assertFalse("Unknown artist".isMeaningfulMetadata())
+        assertFalse("unknown title".isMeaningfulMetadata())
+        assertFalse("  ".isMeaningfulMetadata())
+        assertTrue("Pearl Jam".isMeaningfulMetadata())
     }
 }

@@ -1,10 +1,13 @@
 package dev.relay.music.playback
 
 import dev.relay.music.model.Track
+import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.serialization.Serializable
 
 enum class RepeatMode { OFF, ONE, ALL }
 
+@Serializable
 data class NowPlayingSnapshot(
     val trackKey: String? = null,
     val title: String? = null,
@@ -16,6 +19,12 @@ data class NowPlayingSnapshot(
     val durationMs: Long = 0,
     val updatedAtEpochMs: Long = 0,
 )
+
+interface NowPlayingSnapshotStore {
+    fun observe(): Flow<NowPlayingSnapshot?>
+    suspend fun read(): NowPlayingSnapshot?
+    suspend fun write(snapshot: NowPlayingSnapshot)
+}
 
 data class PlaybackState(
     val queue: List<Track> = emptyList(),

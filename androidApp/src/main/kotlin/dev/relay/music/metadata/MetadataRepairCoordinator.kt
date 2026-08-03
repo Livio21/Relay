@@ -27,7 +27,10 @@ class MetadataRepairCoordinator(
     class SavedOverride(val updatedTrack: Track, val artworkError: Throwable?)
 
     sealed interface SearchOutcome {
-        data class Candidates(val candidates: List<MetadataCandidate>) : SearchOutcome
+        data class Candidates(
+            val candidates: List<MetadataCandidate>,
+            val reviewRequired: Boolean,
+        ) : SearchOutcome
         data class Failure(val message: String) : SearchOutcome
     }
 
@@ -64,6 +67,7 @@ class MetadataRepairCoordinator(
                     musicBrainzId = override.musicBrainzId,
                     trackNumber = override.trackNumber,
                     discNumber = override.discNumber,
+                    musicBrainzReleaseId = override.musicBrainzReleaseId,
                 ),
             )
         }
@@ -74,26 +78,41 @@ class MetadataRepairCoordinator(
     }
 
     /** Serves the cached lookup when the source revision and query still match; otherwise MusicBrainz. */
-    suspend fun search(track: Track, title: String, artist: String): SearchOutcome {
-        val fingerprint = metadataFingerprint(title, artist, track.album)
+    suspend fun search(track: Track, title: String, artist: String, refresh: Boolean = false): SearchOutcome {
+        val target = MetadataSearchTarget(
+            title = title,
+            artist = artist,
+            album = track.album,
+            durationMs = track.durationMs,
+            trackNumber = track.trackNumber,
+            discNumber = track.discNumber,
+            recordingId = track.musicBrainzId,
+            releaseId = track.musicBrainzReleaseId,
+        )
+        val fingerprint = metadataSearchCacheKey(target)
         val now = System.currentTimeMillis()
-        val cached = withContext(Dispatchers.IO) {
-            dao.metadataLookup(track.sourceId, track.id)
-                ?.takeIf { it.sourceRevision == track.sourceRevision && it.queryFingerprint == fingerprint && it.expiresAtEpochMs > now }
-                ?: dao.metadataLookupForQuery(fingerprint, now)
-        }?.candidates()
-        if (cached != null) return SearchOutcome.Candidates(cached)
-        return musicBrainzApi.search(title, artist, track.album).fold(
-            onSuccess = { candidates ->
+        if (!refresh) {
+            val cached = withContext(Dispatchers.IO) {
+                dao.metadataLookup(track.sourceId, track.id)
+                    ?.takeIf { it.sourceRevision == track.sourceRevision && it.queryFingerprint == fingerprint && it.expiresAtEpochMs > now }
+                    ?: dao.metadataLookupForQuery(fingerprint, now)
+            }?.candidates()
+            if (cached != null) {
+                val ranking = rankMetadataCandidates(target, cached)
+                return SearchOutcome.Candidates(ranking.candidates, ranking.reviewRequired)
+            }
+        }
+        return musicBrainzApi.search(target, refresh).fold(
+            onSuccess = { ranking ->
                 withContext(Dispatchers.IO) {
                     dao.saveMetadataLookup(
                         MetadataLookupEntity(
                             track.sourceId, track.id, track.sourceRevision, fingerprint,
-                            candidates.toCacheJson(), System.currentTimeMillis() + METADATA_CACHE_MS,
+                            ranking.candidates.toCacheJson(), System.currentTimeMillis() + METADATA_CACHE_MS,
                         ),
                     )
                 }
-                SearchOutcome.Candidates(candidates)
+                SearchOutcome.Candidates(ranking.candidates, ranking.reviewRequired)
             },
             onFailure = { error -> SearchOutcome.Failure(error.message ?: "Could not search MusicBrainz.") },
         )
@@ -113,9 +132,6 @@ class MetadataRepairCoordinator(
     }
 }
 
-private fun metadataFingerprint(title: String, artist: String, album: String?): String =
-    "v3\u0000${title.trim()}\u0000${artist.trim()}\u0000${album.orEmpty().trim()}".lowercase()
-
 private fun MetadataLookupEntity.candidates(): List<MetadataCandidate>? = runCatching {
     JSONArray(candidatesJson).let { array ->
         List(array.length()) { index ->
@@ -130,6 +146,7 @@ private fun MetadataLookupEntity.candidates(): List<MetadataCandidate>? = runCat
                     artworkUri = item.optString("artworkUri").takeIf { it.isNotBlank() },
                     trackNumber = item.optInt("trackNumber").takeIf { it > 0 },
                     discNumber = item.optInt("discNumber").takeIf { it > 0 },
+                    durationMs = item.optLong("durationMs").takeIf { it > 0 },
                 )
             }
         }
@@ -147,4 +164,5 @@ private fun List<MetadataCandidate>.toCacheJson(): String = JSONArray(map { cand
         .put("artworkUri", candidate.artworkUri)
         .put("trackNumber", candidate.trackNumber)
         .put("discNumber", candidate.discNumber)
+        .put("durationMs", candidate.durationMs)
 }).toString()

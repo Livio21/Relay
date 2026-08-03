@@ -59,7 +59,7 @@ class AndroidExtensionLoader(
 
         val optimizedDirectory = File(context.codeCacheDir, "relay-extensions").apply { mkdirs() }
         val classLoader = RelayExtensionClassLoader(applicationInfo.sourceDir, optimizedDirectory.path, context.classLoader)
-        return entryClasses.flatMap { className ->
+        val sources = entryClasses.flatMap { className ->
             val resolvedName = if (className.startsWith('.')) "${entry.androidPackageName}$className" else className
             when (val instance = Class.forName(resolvedName, false, classLoader).getDeclaredConstructor().newInstance()) {
                 is RelaySource -> listOf(instance)
@@ -69,13 +69,18 @@ class AndroidExtensionLoader(
                 }
                 else -> error("Extension entry does not implement RelaySource or RelaySourceFactory.")
             }
-        }.also { sources ->
-            require(sources.isNotEmpty() && sources.size <= MAX_SOURCES) { "Extension returned an invalid number of sources." }
-            require(sources.all { it.getId().isValidSourceId() && it.getName().isNotBlank() && it.getName().length <= 128 }) {
+        }
+        require(sources.isNotEmpty() && sources.size <= MAX_SOURCES) { "Extension returned an invalid number of sources." }
+        val sourceIds = mutableSetOf<String>()
+        return sources.map { source ->
+            val sourceId = source.getId().orEmpty()
+            val sourceName = source.getName().orEmpty().trim()
+            require(sourceId.isValidSourceId() && sourceName.isNotEmpty() && sourceName.length <= 128) {
                 "Extension source identity is invalid."
             }
-            require(sources.map { it.getId() }.distinct().size == sources.size) { "Extension source IDs are duplicated." }
-        }.map { source -> LoadedRelaySource(entry, source) }
+            require(sourceIds.add(sourceId)) { "Extension source IDs are duplicated." }
+            LoadedRelaySource(entry, source, sourceId, sourceName)
+        }
     }
 
     /** Bounded, validated browse listings; an empty list means the source is search-only. */
@@ -109,14 +114,7 @@ class AndroidExtensionLoader(
         val result = withTimeout(SEARCH_TIMEOUT_MS) {
             withContext(Dispatchers.IO) { runInterruptible(block = request) }
         }
-        require(result.getTracks().size <= MAX_TRACKS) { "Extension returned too many tracks." }
-        return ExtensionSourceResults(
-            extensionId = source.entry.id,
-            extensionName = source.source.getName(),
-            tracks = result.getTracks().mapNotNull { it.toTrack(source.entry.id, source.source.getId()) },
-            page = page,
-            hasNextPage = result.getHasNextPage(),
-        )
+        return result.toResults(source.entry.id, source.sourceId, source.sourceName, page)
     }
 
     /** Called just before playback or download for tracks whose search result had no stream URL. */
@@ -190,7 +188,6 @@ class AndroidExtensionLoader(
     private companion object {
         const val MAX_ENTRY_CLASSES = 8
         const val MAX_SOURCES = 32
-        const val MAX_TRACKS = 100
         const val MAX_LISTINGS = 24
         const val MAX_SETTINGS = 16
         const val MAX_PAGE = 1_000
@@ -207,7 +204,27 @@ class AndroidExtensionLoader(
 data class LoadedRelaySource(
     val entry: ExtensionCatalogEntry,
     val source: RelaySource,
+    val sourceId: String,
+    val sourceName: String,
 )
+
+internal fun RelaySourcePage.toResults(
+    extensionId: String,
+    sourceId: String,
+    sourceName: String,
+    page: Int,
+): ExtensionSourceResults {
+    require(sourceId.isValidSourceId() && sourceName.isNotBlank() && sourceName.length <= 128) {
+        "Extension source identity is invalid."
+    }
+    val sourceTracks = getTracks()
+    require(sourceTracks.size <= MAX_SOURCE_TRACKS) { "Extension returned too many tracks." }
+    val tracks = sourceTracks.map { sourceTrack ->
+        requireNotNull(sourceTrack.toTrack(extensionId, sourceId)) { "Extension returned an invalid track." }
+    }
+    require(tracks.map { it.id }.distinct().size == tracks.size) { "Extension returned duplicate track IDs." }
+    return ExtensionSourceResults(extensionId, sourceName, tracks, page = page, hasNextPage = getHasNextPage())
+}
 
 /** Header names a source may attach to its own media requests. Everything else is dropped. */
 private val ALLOWED_MEDIA_HEADERS = setOf("user-agent", "referer", "origin", "cookie", "authorization", "accept")
@@ -263,6 +280,8 @@ private fun String.isValidListingId() = matches(Regex("[a-z0-9][a-z0-9._-]{0,63}
 private fun String?.isValidTrackId() = !isNullOrBlank() && length <= 512
 
 internal fun String.isValidMediaUrl() = startsWith("https://") && length <= 8_192
+
+private const val MAX_SOURCE_TRACKS = 100
 
 /** Child-first for extension-owned dependencies, parent-first for Android/Kotlin and Relay's source API. */
 private class RelayExtensionClassLoader(

@@ -68,7 +68,7 @@ internal fun MetadataReview(
     candidates: List<MetadataCandidate>,
     searchMessage: String?,
     onCancel: () -> Unit,
-    onSearch: (Track, String, String) -> Unit,
+    onSearch: (Track, String, String, Boolean) -> Unit,
     onIgnore: () -> Unit,
     onSave: (MetadataOverride) -> Unit,
 ) {
@@ -78,6 +78,7 @@ internal fun MetadataReview(
     var albumArtist by remember(track.sourceId, track.id) { mutableStateOf(track.albumArtist.orEmpty()) }
     var artworkUri by remember(track.sourceId, track.id) { mutableStateOf(track.artworkUri.orEmpty()) }
     var musicBrainzId by remember(track.sourceId, track.id) { mutableStateOf(track.musicBrainzId.orEmpty()) }
+    var musicBrainzReleaseId by remember(track.sourceId, track.id) { mutableStateOf(track.musicBrainzReleaseId.orEmpty()) }
     var trackNumber by remember(track.sourceId, track.id) { mutableStateOf(track.trackNumber?.toString().orEmpty()) }
     var discNumber by remember(track.sourceId, track.id) { mutableStateOf(track.discNumber?.toString().orEmpty()) }
     var manualSearchOpen by remember(track.sourceId, track.id) { mutableStateOf(false) }
@@ -108,7 +109,7 @@ internal fun MetadataReview(
                 label = "AUTOCOMPLETE (MUSICBRAINZ)",
                 description = "Find MusicBrainz suggestions from current metadata",
                 enabled = title.isNotBlank(),
-                onClick = { onSearch(track, title, artist) },
+                onClick = { onSearch(track, title, artist, false) },
                 modifier = Modifier.weight(1f),
             )
             Box(
@@ -125,10 +126,10 @@ internal fun MetadataReview(
             MetadataField("SEARCH TITLE", manualTitle, { manualTitle = it })
             MetadataField("SEARCH ARTIST", manualArtist, { manualArtist = it })
             TransportAction(
-                label = "SEARCH",
-                description = "Search MusicBrainz manually",
+                label = "SEARCH / REFRESH",
+                description = "Refresh MusicBrainz results without using Relay's lookup cache",
                 enabled = manualTitle.isNotBlank(),
-                onClick = { onSearch(track, manualTitle, manualArtist) },
+                onClick = { onSearch(track, manualTitle, manualArtist, true) },
                 modifier = Modifier.fillMaxWidth().padding(top = 8.dp),
             )
         }
@@ -142,6 +143,7 @@ internal fun MetadataReview(
                 album = selected.album.orEmpty()
                 albumArtist = selected.albumArtist.orEmpty()
                 musicBrainzId = selected.recordingId
+                musicBrainzReleaseId = selected.releaseId.orEmpty()
                 artworkUri = selected.artworkUri.orEmpty()
                 trackNumber = selected.trackNumber?.toString().orEmpty()
                 discNumber = selected.discNumber?.toString().orEmpty()
@@ -175,6 +177,7 @@ internal fun MetadataReview(
                             musicBrainzId = musicBrainzId.takeIf { it.isNotEmpty() },
                             trackNumber = trackNumber.toIntOrNull()?.takeIf { it > 0 },
                             discNumber = discNumber.toIntOrNull()?.takeIf { it > 0 },
+                            musicBrainzReleaseId = musicBrainzReleaseId.takeIf { it.isNotEmpty() },
                         ),
                     )
                 },

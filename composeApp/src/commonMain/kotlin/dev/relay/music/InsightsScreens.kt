@@ -14,6 +14,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.BasicText
+import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -29,19 +30,53 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import dev.relay.music.model.InsightEntry
 import dev.relay.music.model.InsightsRange
+import dev.relay.music.model.AlbumChartSpec
 import dev.relay.music.model.ListeningDay
 import dev.relay.music.model.ListeningEvent
+import dev.relay.music.model.LocalProfile
+import dev.relay.music.model.albumChartEntries
 import dev.relay.music.model.insightsFor
 import dev.relay.music.ui.RelayColors
 import dev.relay.music.ui.RelayType
 
 @Composable
-internal fun InsightsScreen(events: List<ListeningEvent>, nowEpochMs: Long) {
+internal fun InsightsScreen(
+    events: List<ListeningEvent>,
+    nowEpochMs: Long,
+    onImportLastFmHistory: (() -> Unit)? = null,
+    importMessage: String? = null,
+    profile: LocalProfile? = null,
+    onProfileNameChange: (String) -> Unit = {},
+    onUnlinkLastFmHistory: (Boolean) -> Unit = {},
+    chartSpecs: List<AlbumChartSpec> = emptyList(),
+    onCreateAlbumChart: (InsightsRange, Int) -> Unit = { _, _ -> },
+    onRemoveAlbumChart: (String) -> Unit = {},
+    onExportAlbumChart: (AlbumChartSpec) -> Unit = {},
+) {
     var range by remember { mutableStateOf(InsightsRange.MONTH) }
     val insights = remember(events, range, nowEpochMs) { insightsFor(events, range, nowEpochMs) }
     Column(
         modifier = Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(16.dp),
     ) {
+        profile?.let { localProfile ->
+            LocalProfilePanel(localProfile, onProfileNameChange, onUnlinkLastFmHistory)
+        }
+        onImportLastFmHistory?.let { import ->
+            TransportAction(
+                label = "IMPORT LAST.FM HISTORY",
+                description = "Import the latest 1000 Last.fm scrobbles into this device's local history",
+                enabled = true,
+                onClick = import,
+                modifier = Modifier.fillMaxWidth(),
+            )
+        }
+        importMessage?.let { message ->
+            BasicText(
+                message,
+                style = RelayType.Metadata.copy(color = RelayColors.Muted),
+                modifier = Modifier.padding(top = 8.dp),
+            )
+        }
         Row(modifier = Modifier.fillMaxWidth()) {
             InsightsRange.entries.forEach { candidate ->
                 BasicText(
@@ -98,7 +133,163 @@ internal fun InsightsScreen(events: List<ListeningEvent>, nowEpochMs: Long) {
         InsightsSection("TOP TRACKS", insights.topTracks)
         InsightsSection("TOP ARTISTS", insights.topArtists)
         InsightsSection("TOP ALBUMS", insights.topAlbums)
+        AlbumCharts(
+            events = events,
+            nowEpochMs = nowEpochMs,
+            range = range,
+            specs = chartSpecs,
+            onCreate = onCreateAlbumChart,
+            onRemove = onRemoveAlbumChart,
+            onExport = onExportAlbumChart,
+        )
         ListeningCalendar(insights.listeningDays, nowEpochMs)
+    }
+}
+
+@Composable
+private fun LocalProfilePanel(
+    profile: LocalProfile,
+    onProfileNameChange: (String) -> Unit,
+    onUnlinkLastFmHistory: (Boolean) -> Unit,
+) {
+    var editing by remember(profile.displayName) { mutableStateOf(false) }
+    var draft by remember(profile.displayName) { mutableStateOf(profile.displayName) }
+    var confirmingImportedRemoval by remember(profile.lastFmUsername) { mutableStateOf(false) }
+    Column(
+        modifier = Modifier.fillMaxWidth().border(1.dp, RelayColors.Line).padding(12.dp),
+    ) {
+        BasicText("LOCAL PROFILE", style = RelayType.Utility.copy(color = RelayColors.Muted))
+        if (editing) {
+            BasicTextField(
+                value = draft,
+                onValueChange = { draft = it.take(64) },
+                textStyle = RelayType.Track.copy(color = RelayColors.Paper),
+                singleLine = true,
+                modifier = Modifier.fillMaxWidth().padding(top = 8.dp).border(1.dp, RelayColors.Line).padding(12.dp),
+            )
+            Row(modifier = Modifier.fillMaxWidth().padding(top = 8.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                TransportAction("SAVE", "Save local profile name", draft.trim().isNotEmpty(), {
+                    onProfileNameChange(draft)
+                    editing = false
+                }, Modifier.weight(1f))
+                TransportAction("CANCEL", "Cancel profile name edit", true, { editing = false }, Modifier.weight(1f))
+            }
+        } else {
+            BasicText(profile.displayName, style = RelayType.Track, modifier = Modifier.padding(top = 4.dp))
+            profile.lastFmUsername?.let { username ->
+                BasicText("LAST.FM · $username", style = RelayType.Metadata, modifier = Modifier.padding(top = 4.dp))
+            }
+            TransportAction(
+                label = "EDIT PROFILE",
+                description = "Edit local profile name",
+                enabled = true,
+                onClick = { editing = true },
+                modifier = Modifier.fillMaxWidth().padding(top = 8.dp),
+            )
+            if (profile.lastFmUsername != null) {
+                Row(
+                    modifier = Modifier.fillMaxWidth().padding(top = 8.dp),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
+                    TransportAction(
+                        "UNLINK LAST.FM",
+                        "Remove the Last.fm association and keep imported listening history",
+                        true,
+                        { onUnlinkLastFmHistory(false) },
+                        Modifier.weight(1f),
+                    )
+                    TransportAction(
+                        "REMOVE IMPORTED",
+                        "Remove the Last.fm association and its imported listening history",
+                        true,
+                        { confirmingImportedRemoval = true },
+                        Modifier.weight(1f),
+                    )
+                }
+            }
+            if (confirmingImportedRemoval) {
+                BasicText(
+                    "Remove imported Last.fm history from this device? Local plays stay untouched.",
+                    style = RelayType.Metadata.copy(color = RelayColors.Muted),
+                    modifier = Modifier.padding(top = 8.dp),
+                )
+                Row(
+                    modifier = Modifier.fillMaxWidth().padding(top = 8.dp),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                ) {
+                    TransportAction(
+                        "REMOVE",
+                        "Confirm removal of imported Last.fm history",
+                        true,
+                        {
+                            onUnlinkLastFmHistory(true)
+                            confirmingImportedRemoval = false
+                        },
+                        Modifier.weight(1f),
+                    )
+                    TransportAction(
+                        "CANCEL",
+                        "Keep imported Last.fm history",
+                        true,
+                        { confirmingImportedRemoval = false },
+                        Modifier.weight(1f),
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun AlbumCharts(
+    events: List<ListeningEvent>,
+    nowEpochMs: Long,
+    range: InsightsRange,
+    specs: List<AlbumChartSpec>,
+    onCreate: (InsightsRange, Int) -> Unit,
+    onRemove: (String) -> Unit,
+    onExport: (AlbumChartSpec) -> Unit,
+) {
+    var size by remember { mutableStateOf(9) }
+    BasicText("ALBUM CHARTS", style = RelayType.Track, modifier = Modifier.padding(top = 24.dp, bottom = 8.dp))
+    Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        TransportAction(
+            "SIZE · $size",
+            "Set album chart size",
+            true,
+            { size = when (size) { 4 -> 9; 9 -> 16; else -> 4 } },
+            Modifier.weight(1f),
+        )
+        TransportAction(
+            "SAVE $size-ALBUM CHART",
+            "Save a reproducible album chart for the selected time range",
+            events.isNotEmpty(),
+            { onCreate(range, size) },
+            Modifier.weight(1f),
+        )
+    }
+    specs.forEach { spec ->
+        val entries = remember(events, spec, nowEpochMs) { albumChartEntries(events, spec, nowEpochMs) }
+        Column(modifier = Modifier.fillMaxWidth().padding(top = 8.dp).border(1.dp, RelayColors.Line).padding(12.dp)) {
+            BasicText("${spec.range.label()} · ${spec.limit} ALBUMS", style = RelayType.Utility.copy(color = RelayColors.Muted))
+            if (entries.isEmpty()) {
+                BasicText("No album data for this chart.", style = RelayType.Metadata, modifier = Modifier.padding(top = 4.dp))
+            } else {
+                entries.forEachIndexed { index, entry ->
+                    BasicText(
+                        "${(index + 1).toString().padStart(2, '0')}  ${entry.label}",
+                        style = RelayType.Metadata,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier.padding(top = 4.dp),
+                    )
+                }
+            }
+            Row(modifier = Modifier.fillMaxWidth().padding(top = 8.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                TransportAction("SHARE", "Create and share this album chart", entries.isNotEmpty(), { onExport(spec) }, Modifier.weight(1f))
+                TransportAction("REMOVE", "Remove this saved album chart", true, { onRemove(spec.id) }, Modifier.weight(1f))
+            }
+        }
     }
 }
 

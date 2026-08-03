@@ -26,7 +26,6 @@ import androidx.compose.foundation.text.BasicText
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.SideEffect
-import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -37,8 +36,10 @@ import dev.relay.music.model.Track
 import dev.relay.music.model.MetadataHealth
 import dev.relay.music.settings.activeShuffleProfile
 import dev.relay.music.ui.RelayColors
+import dev.relay.music.ui.RelayPresentation
 import dev.relay.music.ui.RelayTheme
 import dev.relay.music.ui.RelayType
+import dev.relay.music.extension.ThemeBackground
 
 sealed interface LibraryUiState {
     data object Ready : LibraryUiState
@@ -52,12 +53,13 @@ internal fun RelayAppContent(
     actions: RelayAppActions,
     modifier: Modifier = Modifier,
 ) {
-    var destination by remember { mutableStateOf(RelayDestination(NOW_PLAYING_VIEW)) }
-    val backStack = remember { mutableStateListOf<RelayDestination>() }
+    var navigation by remember { mutableStateOf(RelayNavigationState()) }
+    val destination = navigation.destination
     val reviewTrack = destination.reviewTrack
     val selectedPlaylistId = destination.selectedPlaylistId
     val settingsSubmenu = destination.settingsSubmenu
     val extensionsSubmenu = destination.extensionsSubmenu
+    val extensionsTab = destination.extensionsTab
     val selectedCatalogExtension = destination.selectedCatalogExtension
     val browsedExtensionId = destination.browsedExtensionId
     val queueOpen = destination.queueOpen
@@ -80,34 +82,26 @@ internal fun RelayAppContent(
         if (delta != 0) {
             pagerTarget = view
             navigationScope.launch {
-                pagerState.animateScrollToPage(pagerState.currentPage + delta)
-                pagerTarget = null
+                try {
+                    pagerState.animateScrollToPage(pagerState.currentPage + delta)
+                } finally {
+                    if (pagerTarget == view) pagerTarget = null
+                }
             }
         }
     }
     fun navigateTo(next: RelayDestination) {
-        if (next == destination) return
-        // Plain view-to-view moves (swipes, heading taps) replace instead of stacking, so the
-        // system back button closes sub-screens and then exits — it never replays page history.
-        if (next.hasSubState || destination.hasSubState) backStack += destination
-        destination = next
+        val updated = navigation.navigate(next)
+        if (updated === navigation) return
+        navigation = updated
         movePagerTo(next.view)
     }
     fun goBack() {
-        if (destination.settingsSubmenu != null) {
-            destination = destination.copy(settingsSubmenu = null)
-            return
-        }
-        if (backStack.isEmpty()) {
-            // Nothing stacked: close whatever sub-screen is open rather than ignoring the press.
-            if (destination.hasSubState) destination = destination.forView(destination.view)
-            return
-        }
-        destination = backStack.removeAt(backStack.lastIndex)
-        movePagerTo(destination.view)
+        val updated = navigation.back() ?: return
+        navigation = updated
+        movePagerTo(updated.destination.view)
     }
-    val isSubmenu = queueOpen || lyricsOpen || playerOptionsOpen || reviewTrack != null || extensionsSubmenu != null ||
-        (destination.view == PLAYLISTS_VIEW && openPlaylist != null)
+    val isSubmenu = destination.hasSubState
     LaunchedEffect(pagerState.isScrollInProgress, currentView, pagerTarget) {
         if (pagerTarget == null && !pagerState.isScrollInProgress && currentView != destination.view) {
             navigateTo(destination.forView(currentView))
@@ -120,10 +114,15 @@ internal fun RelayAppContent(
             navigateTo(destination.copy(view = SETTINGS_VIEW, settingsSubmenu = SettingsSubmenu.REPOSITORIES))
         }
     }
-    SideEffect { actions.onBackActionChanged(if (settingsSubmenu != null || backStack.isNotEmpty() || destination.hasSubState) ::goBack else null) }
+    SideEffect { actions.onBackActionChanged(if (navigation.canGoBack) ::goBack else null) }
 
-    RelayTheme {
-        BoxWithConstraints(modifier = modifier.fillMaxSize().background(RelayColors.Ink)) {
+    RelayTheme(backgroundArtworkUri = state.playback.currentTrack?.artworkUri) {
+        BoxWithConstraints(
+            modifier = modifier.fillMaxSize().background(
+                if (RelayPresentation.background == ThemeBackground.NONE) RelayColors.Ink
+                else RelayColors.Ink.copy(alpha = 0.72f),
+            ),
+        ) {
         val landscape = maxWidth > maxHeight
         Column(
             modifier = Modifier
@@ -248,6 +247,7 @@ internal fun RelayAppContent(
                             onRemoveIndex = actions.onRemoveQueueIndex,
                             onMoveIndex = actions.onMoveQueueIndex,
                             onShuffleEnabledChange = actions.onShuffleEnabledChange,
+                            onRepeatModeChange = actions.onRepeatModeChange,
                             onReshuffle = actions.onShuffleQueue,
                             onOpenShuffleSettings = {
                                 navigateTo(destination.copy(view = SETTINGS_VIEW, settingsSubmenu = SettingsSubmenu.PLAYBACK))
@@ -285,7 +285,21 @@ internal fun RelayAppContent(
                             )
                         }
                     }
-                    INSIGHTS_VIEW -> InsightsScreen(state.listeningEvents, state.nowEpochMs)
+                    INSIGHTS_VIEW -> InsightsScreen(
+                        events = state.listeningEvents,
+                        nowEpochMs = state.nowEpochMs,
+                        onImportLastFmHistory = actions.onImportLastFmHistory.takeIf {
+                            state.lastFmConnectionState == dev.relay.music.lastfm.LastFmConnectionState.CONNECTED
+                        },
+                        importMessage = state.lastFmHistoryImportMessage,
+                        profile = state.localProfile,
+                        onProfileNameChange = actions.onProfileNameChange,
+                        onUnlinkLastFmHistory = actions.onUnlinkLastFmHistory,
+                        chartSpecs = state.albumChartSpecs,
+                        onCreateAlbumChart = actions.onCreateAlbumChart,
+                        onRemoveAlbumChart = actions.onRemoveAlbumChart,
+                        onExportAlbumChart = actions.onExportAlbumChart,
+                    )
                     EXTENSIONS_VIEW -> ExtensionsScreen(
                         settings = state.settings,
                         repositoryCatalogs = state.repositoryCatalogs,
@@ -301,6 +315,7 @@ internal fun RelayAppContent(
                         repositoryImportMessage = state.repositoryImportMessage,
                         repositoryImportVersion = state.repositoryImportVersion,
                         submenu = extensionsSubmenu,
+                        selectedTab = extensionsTab,
                         selectedExtension = selectedCatalogExtension,
                         onSubmenuChange = { submenu ->
                             navigateTo(destination.copy(
@@ -309,6 +324,9 @@ internal fun RelayAppContent(
                                 selectedCatalogExtension = null,
                                 browsedExtensionId = if (submenu == ExtensionsSubmenu.SOURCE_SEARCH) null else browsedExtensionId,
                             ))
+                        },
+                        onTabChange = { tab ->
+                            navigateTo(destination.copy(view = EXTENSIONS_VIEW, extensionsTab = tab))
                         },
                         onExtensionSelected = { extension ->
                             navigateTo(destination.copy(
@@ -343,6 +361,7 @@ internal fun RelayAppContent(
                                 browsedExtensionId = extensionId,
                             ))
                         },
+                        onOpenSupportUrl = actions.onOpenExternalUrl,
                     )
                     SETTINGS_VIEW -> SettingsScreen(
                         state.settings,
@@ -350,8 +369,29 @@ internal fun RelayAppContent(
                         actions.onChooseStorageRoot,
                         actions.onBackupExport,
                         actions.onBackupImport,
-                        actions.onBackupScheduleChange,
-                        actions.onAutoBackupExpiryChange,
+                        onSyncExport = actions.onSyncExport,
+                        onSyncImport = actions.onSyncImport,
+                        syncConflicts = state.syncConflicts,
+                        onDismissSyncConflict = actions.onDismissSyncConflict,
+                        onUseReceivedSyncConflict = actions.onUseReceivedSyncConflict,
+                        lanSync = state.lanSync,
+                        pairedDevices = state.pairedDevices,
+                        playTogether = state.playTogether,
+                        onStartLanSyncHost = actions.onStartLanSyncHost,
+                        onJoinLanSync = actions.onJoinLanSync,
+                        onConfirmLanSync = actions.onConfirmLanSync,
+                        onCancelLanSync = actions.onCancelLanSync,
+                        onUnpairDevice = actions.onUnpairDevice,
+                        onSelectMusicTransfer = actions.onSelectMusicTransfer,
+                        onImportMusicTransfer = actions.onImportMusicTransfer,
+                        onPrepareLanMusicTransfer = actions.onPrepareLanMusicTransfer,
+                        onStartPlayTogetherHost = actions.onStartPlayTogetherHost,
+                        onJoinPlayTogether = actions.onJoinPlayTogether,
+                        onConfirmPlayTogether = actions.onConfirmPlayTogether,
+                        onLeavePlayTogether = actions.onLeavePlayTogether,
+                        onResyncPlayTogether = actions.onResyncPlayTogether,
+                        onBackupScheduleChange = actions.onBackupScheduleChange,
+                        onAutoBackupExpiryChange = actions.onAutoBackupExpiryChange,
                         state.lastFmConnectionState,
                         state.lastFmErrorMessage,
                         actions.onDebugScrobble,
@@ -366,9 +406,11 @@ internal fun RelayAppContent(
                         state.repositoryImportVersion,
                         actions.onRefreshRepository,
                         actions.onAudioSettingsChange,
+                        onWallpaperSettingsChange = actions.onWallpaperSettingsChange,
                         onImportThemePack = actions.onImportThemePack,
                         onApplyThemePack = actions.onApplyThemePack,
                         onRemoveThemePack = actions.onRemoveThemePack,
+                        onOpenAlbumWallpaperPicker = actions.onOpenAlbumWallpaperPicker,
                         submenu = settingsSubmenu,
                         onSubmenuChange = { submenu ->
                             navigateTo(destination.copy(view = SETTINGS_VIEW, settingsSubmenu = submenu))
@@ -391,6 +433,7 @@ internal fun RelayAppContent(
                     onViewSwipe = { delta -> navigateTo(destination.forView((currentView + delta + PAGE_TITLES.size) % PAGE_TITLES.size)) },
                     shuffleProfileName = state.settings.activeShuffleProfile().name,
                     onShuffleEnabledChange = actions.onShuffleEnabledChange,
+                    onRepeatModeChange = actions.onRepeatModeChange,
                     onReshuffle = actions.onShuffleQueue,
                     onOpenShuffleSettings = {
                         navigateTo(destination.copy(view = SETTINGS_VIEW, settingsSubmenu = SettingsSubmenu.PLAYBACK))
@@ -440,6 +483,7 @@ internal data class RelayDestination(
     val selectedPlaylistId: Long? = null,
     val settingsSubmenu: SettingsSubmenu? = null,
     val extensionsSubmenu: ExtensionsSubmenu? = null,
+    val extensionsTab: ExtensionsTab = ExtensionsTab.SOURCES,
     val selectedCatalogExtension: CatalogExtension? = null,
     val browsedExtensionId: String? = null,
     val queueOpen: Boolean = false,
@@ -448,7 +492,7 @@ internal data class RelayDestination(
 ) {
     /** True when this destination is a sub-screen rather than a plain top-level page. */
     val hasSubState: Boolean
-        get() = reviewTrack != null || extensionsSubmenu != null || queueOpen || lyricsOpen || playerOptionsOpen ||
+        get() = reviewTrack != null || settingsSubmenu != null || extensionsSubmenu != null || queueOpen || lyricsOpen || playerOptionsOpen ||
             (view == PLAYLISTS_VIEW && selectedPlaylistId != null)
 
     fun forView(view: Int) = copy(
@@ -457,12 +501,35 @@ internal data class RelayDestination(
         selectedPlaylistId = null,
         settingsSubmenu = null,
         extensionsSubmenu = null,
+        extensionsTab = ExtensionsTab.SOURCES,
         selectedCatalogExtension = null,
         browsedExtensionId = null,
         queueOpen = false,
         lyricsOpen = false,
         playerOptionsOpen = false,
     )
+}
+
+private const val MAX_RELAY_BACK_STACK = 64
+private val ROOT_DESTINATION = RelayDestination(NOW_PLAYING_VIEW)
+
+internal data class RelayNavigationState(
+    val destination: RelayDestination = ROOT_DESTINATION,
+    val backStack: List<RelayDestination> = emptyList(),
+) {
+    val canGoBack: Boolean
+        get() = backStack.isNotEmpty() || destination != ROOT_DESTINATION
+
+    fun navigate(next: RelayDestination): RelayNavigationState = when (next) {
+        destination -> this
+        else -> RelayNavigationState(next, (backStack + destination).takeLast(MAX_RELAY_BACK_STACK))
+    }
+
+    fun back(): RelayNavigationState? = when {
+        backStack.isNotEmpty() -> RelayNavigationState(backStack.last(), backStack.dropLast(1))
+        destination != ROOT_DESTINATION -> RelayNavigationState()
+        else -> null
+    }
 }
 
 internal fun pagerPageDelta(current: Int, target: Int): Int {

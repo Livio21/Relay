@@ -56,6 +56,8 @@ import androidx.compose.ui.semantics.setProgress
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.text.TextRange
+import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.Dp
 import androidx.compose.foundation.lazy.LazyColumn
@@ -64,10 +66,17 @@ import androidx.compose.foundation.lazy.rememberLazyListState
 import dev.relay.music.model.TimedLyrics
 import dev.relay.music.model.Track
 import dev.relay.music.model.activeLineIndex
+import dev.relay.music.model.formatLrcTimestamp
 import dev.relay.music.model.parseLrc
+import dev.relay.music.model.prepareLrcForSave
+import dev.relay.music.model.resolveEffectiveMetadata
+import dev.relay.music.model.stampLrcLine
 import dev.relay.music.playback.PlaybackState
+import dev.relay.music.playback.RepeatMode
 import dev.relay.music.ui.RelayColors
+import dev.relay.music.ui.RelayPresentation
 import dev.relay.music.ui.RelayType
+import dev.relay.music.extension.ThemePlayerLayout
 import coil3.compose.AsyncImage
 
 internal enum class PlayerLayout { EXPANDED, COMPACT }
@@ -89,6 +98,7 @@ internal fun PlayerSurface(
     onOpenNowPlaying: () -> Unit = {},
     shuffleProfileName: String = "DEFAULT",
     onShuffleEnabledChange: ((Boolean) -> Unit)? = null,
+    onRepeatModeChange: ((RepeatMode) -> Unit)? = null,
     onReshuffle: (() -> Unit)? = null,
     onOpenShuffleSettings: (() -> Unit)? = null,
     onOpenQueue: (() -> Unit)? = null,
@@ -145,6 +155,7 @@ internal fun PlayerSurface(
                 onFetchLyrics = onFetchLyrics,
                 shuffleProfileName = shuffleProfileName,
                 onShuffleEnabledChange = onShuffleEnabledChange,
+                onRepeatModeChange = onRepeatModeChange,
                 onReshuffle = onReshuffle,
                 onOpenShuffleSettings = onOpenShuffleSettings,
                 onOpenQueue = onOpenQueue,
@@ -214,6 +225,13 @@ internal fun CompactPlayerSurface(
                 modifier = Modifier.heightIn(min = 48.dp).clickable(role = Role.Button, onClick = onNext).padding(horizontal = 10.dp, vertical = 16.dp),
             )
         }
+        playbackState.error?.let { message ->
+            BasicText(
+                message,
+                style = RelayType.Metadata.copy(color = RelayColors.Danger),
+                modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 8.dp),
+            )
+        }
     }
 }
 
@@ -231,6 +249,7 @@ internal fun ExpandedPlayerSurface(
     onFetchLyrics: ((Track) -> Unit)?,
     shuffleProfileName: String = "DEFAULT",
     onShuffleEnabledChange: ((Boolean) -> Unit)? = null,
+    onRepeatModeChange: ((RepeatMode) -> Unit)? = null,
     onReshuffle: (() -> Unit)? = null,
     onOpenShuffleSettings: (() -> Unit)? = null,
     onOpenQueue: (() -> Unit)? = null,
@@ -256,6 +275,7 @@ internal fun ExpandedPlayerSurface(
         LyricsEditor(
             track = track,
             lyricsText = lyricsText,
+            positionMs = playbackState.positionMs,
             onSaveLyrics = onSaveLyrics,
             onDone = { editingLyrics = false },
             modifier = modifier.fillMaxSize().padding(16.dp),
@@ -267,17 +287,31 @@ internal fun ExpandedPlayerSurface(
             modifier = Modifier.fillMaxSize().verticalScroll(rememberScrollState()),
             horizontalAlignment = Alignment.CenterHorizontally,
         ) {
-            track.artworkUri?.let { artworkUri ->
+            val compactPresentation = RelayPresentation.playerLayout == ThemePlayerLayout.COMPACT
+            if (!compactPresentation) track.artworkUri?.let { artworkUri ->
                 AmbientArtwork(artworkUri, Modifier.fillMaxWidth().height(32.dp))
             }
-            Box(modifier = Modifier.fillMaxWidth().aspectRatio(1f)) {
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth(if (compactPresentation) 0.62f else 1f)
+                    .aspectRatio(1f),
+            ) {
                 PlayerArtwork(track, "NO ARTWORK", Modifier.fillMaxSize())
                 if (lyricsOpen) LyricsOverlay(lyricsText, lyricsMessage, playbackState.positionMs)
             }
-            track.artworkUri?.let { artworkUri -> AmbientArtwork(artworkUri, Modifier.fillMaxWidth().height(48.dp)) }
+            if (!compactPresentation) track.artworkUri?.let { artworkUri ->
+                AmbientArtwork(artworkUri, Modifier.fillMaxWidth().height(48.dp))
+            }
             Column(modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp)) {
                 PlayerIdentity(track, expanded = true, modifier = Modifier.fillMaxWidth().padding(top = 20.dp))
                 PlayerProgress(progressText = true ,playbackState, onSeekTo, Modifier.padding(top = 20.dp))
+                playbackState.error?.let { message ->
+                    BasicText(
+                        message,
+                        style = RelayType.Metadata.copy(color = RelayColors.Danger),
+                        modifier = Modifier.fillMaxWidth().padding(top = 12.dp),
+                    )
+                }
                 // Transport stays on screen; everything secondary lives behind MORE.
                 Row(modifier = Modifier.fillMaxWidth().padding(top = 16.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     TransportAction("PREV", "Previous track", true, onPrevious, Modifier.weight(1f))
@@ -301,6 +335,7 @@ internal fun ExpandedPlayerSurface(
                         canFetchLyrics = onFetchLyrics != null && track.title.isNotBlank() && track.artist.isNotBlank(),
                         shuffleProfileName = shuffleProfileName,
                         onShuffleEnabledChange = onShuffleEnabledChange,
+                        onRepeatModeChange = onRepeatModeChange,
                         onReshuffle = onReshuffle,
                         onOpenShuffleSettings = onOpenShuffleSettings,
                         onOpenQueue = onOpenQueue,
@@ -323,6 +358,7 @@ private fun PlayerOptionsMenu(
     canEditLyrics: Boolean,
     canFetchLyrics: Boolean,
     onShuffleEnabledChange: ((Boolean) -> Unit)?,
+    onRepeatModeChange: ((RepeatMode) -> Unit)?,
     onReshuffle: (() -> Unit)?,
     onOpenShuffleSettings: (() -> Unit)?,
     onOpenQueue: (() -> Unit)?,
@@ -340,6 +376,15 @@ private fun PlayerOptionsMenu(
     ) {
         BasicText("PLAYER OPTIONS", style = RelayType.Utility.copy(color = RelayColors.Muted))
         Row(modifier = Modifier.fillMaxWidth().padding(top = 8.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            onRepeatModeChange?.let {
+                TransportAction(
+                    repeatLabel(playbackState.repeatMode),
+                    "Change repeat mode; current setting ${repeatLabel(playbackState.repeatMode).lowercase()}",
+                    playbackState.queue.isNotEmpty(),
+                    { it(playbackState.repeatMode.next()) },
+                    Modifier.weight(1f),
+                )
+            }
             onShuffleEnabledChange?.let {
                 TransportAction(
                     "SHUFFLE ${if (playbackState.shuffleEnabled) "ON" else "OFF"}",
@@ -440,13 +485,14 @@ internal fun PlayerArtwork(
     modifier: Modifier = Modifier,
     onClick: (() -> Unit)? = null,
 ) {
+    val effective = track?.resolveEffectiveMetadata()
     val artworkModifier = modifier.then(
         if (onClick == null) Modifier else Modifier.clickable(role = Role.Button, onClick = onClick),
     )
-    track?.artworkUri?.let { artworkUri ->
+    effective?.track?.artworkUri?.let { artworkUri ->
         AsyncImage(
             model = artworkUri,
-            contentDescription = "Album cover for ${track.album ?: track.title}",
+            contentDescription = "Album cover for ${effective.display.album}",
             contentScale = ContentScale.Crop,
             modifier = artworkModifier,
         )
@@ -458,19 +504,20 @@ internal fun PlayerArtwork(
 
 @Composable
 internal fun PlayerIdentity(track: Track?, expanded: Boolean, modifier: Modifier = Modifier) {
+    val effective = track?.resolveEffectiveMetadata()
     Column(modifier = modifier, verticalArrangement = Arrangement.Center) {
         BasicText(
-            text = track?.title?.ifBlank { "Untitled track" } ?: "NO TRACK SELECTED",
+            text = effective?.display?.title ?: "NO TRACK SELECTED",
             style = if (expanded) RelayType.Title else RelayType.Track,
             maxLines = 1,
             overflow = TextOverflow.Ellipsis,
         )
-        track?.let {
+        effective?.let {
             BasicText(
                 text = if (expanded) {
-                    "${it.artist.ifBlank { "Unknown artist" }} — ${it.album ?: "Unknown album"}"
+                    "${it.display.artist} — ${it.display.album}"
                 } else {
-                    it.artist.ifBlank { "Unknown artist" }
+                    it.display.artist
                 },
                 style = RelayType.Metadata,
                 modifier = Modifier.padding(top = 4.dp),
@@ -580,153 +627,68 @@ internal fun PlayerProgressText(playbackState: PlaybackState) {
 internal fun LyricsEditor(
     track: Track,
     lyricsText: String?,
+    positionMs: Long,
     onSaveLyrics: (Track, String) -> Unit,
     onDone: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    var draft by remember(trackKey(track), lyricsText) { mutableStateOf(lyricsText.orEmpty()) }
+    var draft by remember(trackKey(track), lyricsText) { mutableStateOf(TextFieldValue(lyricsText.orEmpty())) }
+    var saveError by remember(trackKey(track), lyricsText) { mutableStateOf<String?>(null) }
     Column(modifier = modifier.fillMaxSize()) {
         BasicText(track.title, style = RelayType.Track)
         BasicText(
-            "Paste .lrc text with [mm:ss.xx] timestamps to make lyrics follow playback.",
+            "Place the cursor on a lyric line, then stamp it when the line starts. Plain lyrics can still be saved.",
             style = RelayType.Metadata,
             modifier = Modifier.padding(top = 4.dp),
         )
         BasicTextField(
-            draft,
-            { draft = it },
+            value = draft,
+            onValueChange = { draft = it; saveError = null },
             textStyle = RelayType.Metadata.copy(color = RelayColors.Paper),
-            modifier = Modifier.fillMaxWidth().weight(1f).padding(top = 16.dp).border(1.dp, RelayColors.Line).padding(12.dp),
+            modifier = Modifier
+                .fillMaxWidth()
+                .weight(1f)
+                .padding(top = 16.dp)
+                .border(1.dp, RelayColors.Line)
+                .semantics { contentDescription = "Local lyrics editor" }
+                .padding(12.dp),
         )
         Row(modifier = Modifier.fillMaxWidth().padding(top = 8.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            TransportAction("CANCEL", "Discard lyric changes", true, onDone, Modifier.weight(1f))
-            TransportAction("SAVE LYRICS", "Save local lyrics", true, { onSaveLyrics(track, draft); onDone() }, Modifier.weight(1f))
-        }
-    }
-}
-
-@Composable
-internal fun NowPlaying(
-    playbackState: PlaybackState,
-    onPlayPause: () -> Unit,
-    onPrevious: () -> Unit,
-    onNext: () -> Unit,
-    onSeekTo: (Long) -> Unit,
-) {
-    val track = playbackState.currentTrack
-    val progress = playbackProgress(playbackState)
-    val durationMs = playbackState.durationMs
-    var progressWidth by remember { mutableIntStateOf(0) }
-
-    Column(
-        modifier = Modifier
-            .fillMaxWidth()
-            .background(RelayColors.Panel)
-            .border(width = 1.dp, color = RelayColors.Line)
-            .padding(16.dp),
-    ) {
-        BasicText(
-            text = track?.title?.ifBlank { "Untitled track" } ?: "NO TRACK SELECTED",
-            style = RelayType.Track,
-            maxLines = 1,
-            overflow = TextOverflow.Ellipsis,
-        )
-        BasicText(
-            text = if (track == null) {
-                "Select a track from the index."
-            } else {
-                "${track.artist.ifBlank { "Unknown artist" }} — ${track.album?.takeIf { it.isNotBlank() } ?: "Unknown album"}"
-            },
-            style = RelayType.Metadata,
-            modifier = Modifier.padding(top = 4.dp),
-            maxLines = 1,
-            overflow = TextOverflow.Ellipsis,
-        )
-        playbackState.error?.let { message ->
-            BasicText(
-                text = message,
-                style = RelayType.Metadata.copy(color = RelayColors.Danger),
-                modifier = Modifier.padding(top = 4.dp),
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-            )
-        }
-        Box(
-            modifier = Modifier
-                .fillMaxWidth()
-                .height(3.dp)
-                .background(RelayColors.Line)
-                .onSizeChanged { progressWidth = it.width }
-                .pointerInput(durationMs, progressWidth) {
-                    detectTapGestures { offset ->
-                        if (durationMs > 0 && progressWidth > 0) {
-                            onSeekTo((durationMs * offset.x / progressWidth).toLong())
-                        }
-                    }
-                }
-                .semantics {
-                    contentDescription = "Seek within current track"
-                    if (durationMs > 0) {
-                        progressBarRangeInfo = ProgressBarRangeInfo(
-                            current = playbackState.positionMs.coerceIn(0, durationMs).toFloat(),
-                            range = 0f..durationMs.toFloat(),
-                            steps = 0,
-                        )
-                        setProgress { target ->
-                            onSeekTo(target.toLong())
-                            true
-                        }
-                    }
+            TransportAction(
+                "STAMP ${formatLrcTimestamp(positionMs)}",
+                "Stamp the selected lyric line at the current playback position",
+                true,
+                {
+                    val selectedLineStart = draft.text.lastIndexOf('\n', draft.selection.start - 1) + 1
+                    val stamped = stampLrcLine(draft.text, draft.selection.start, positionMs)
+                    val nextLine = stamped.indexOf('\n', selectedLineStart)
+                    val nextCursor = if (nextLine >= 0) nextLine + 1 else stamped.length
+                    draft = TextFieldValue(stamped, TextRange(nextCursor))
+                    saveError = null
                 },
-        ) {
-            Box(
-                modifier = Modifier
-                    .fillMaxWidth(progress)
-                    .fillMaxHeight()
-                    .background(RelayColors.Signal),
+                Modifier.fillMaxWidth(),
             )
         }
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(top = 6.dp),
-            horizontalArrangement = Arrangement.SpaceBetween,
-        ) {
+        saveError?.let {
             BasicText(
-                text = if (track == null) "--:--" else formatDuration(playbackState.positionMs),
-                style = RelayType.Utility,
-            )
-            BasicText(
-                text = track?.durationMs?.let(::formatDuration) ?: "--:--",
-                style = RelayType.Utility,
+                it,
+                style = RelayType.Metadata.copy(color = RelayColors.Danger),
+                modifier = Modifier.padding(top = 8.dp).semantics { contentDescription = "Lyrics error: $it" },
             )
         }
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(top = 12.dp),
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
-        ) {
+        Row(modifier = Modifier.fillMaxWidth().padding(top = 8.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            TransportAction("CANCEL", "Discard lyric changes", true, onDone, Modifier.weight(1f))
             TransportAction(
-                label = "PREV",
-                description = "Previous track",
-                enabled = track != null,
-                onClick = onPrevious,
-                modifier = Modifier.weight(1f),
-            )
-            TransportAction(
-                label = if (playbackState.isPlaying) "PAUSE" else "PLAY",
-                description = if (playbackState.isPlaying) "Pause playback" else "Play",
-                enabled = track != null,
-                onClick = onPlayPause,
-                modifier = Modifier.weight(1f),
-            )
-            TransportAction(
-                label = "NEXT",
-                description = "Next track",
-                enabled = track != null,
-                onClick = onNext,
-                modifier = Modifier.weight(1f),
+                "SAVE LYRICS",
+                "Validate, order, and save local lyrics",
+                true,
+                {
+                    prepareLrcForSave(draft.text).fold(
+                        onSuccess = { onSaveLyrics(track, it); onDone() },
+                        onFailure = { saveError = it.message ?: "Invalid LRC lyrics." },
+                    )
+                },
+                Modifier.weight(1f),
             )
         }
     }

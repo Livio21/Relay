@@ -28,4 +28,19 @@ class RelayStorageTest {
         assertFalse(RelayStorage.isPartialDownloadName("Pearl Jam - Alive.flac"))
         assertFalse(RelayStorage.isPartialDownloadName("a party mix.mp3"))
     }
+
+    @Test
+    fun replacementKeepsCompletedFileAndUsesAPlayableTemporaryFinalName() {
+        val completed = "Alive-abc123.mp3"
+
+        assertFalse(RelayStorage.isStagedDownloadFor(completed, completed))
+        assertTrue(RelayStorage.isStagedDownloadFor("$completed.part.mp3", completed))
+        assertEquals(
+            "Alive-abc123 (replacement 2).mp3",
+            RelayStorage.availableCompletedDownloadName(
+                completed,
+                setOf(completed, "Alive-abc123 (replacement 1).mp3"),
+            ),
+        )
+    }
 }

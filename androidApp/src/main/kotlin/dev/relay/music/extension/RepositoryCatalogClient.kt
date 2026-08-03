@@ -15,8 +15,12 @@ import java.net.HttpURLConnection
 import java.net.URL
 import java.security.KeyFactory
 import java.security.Signature
+import java.security.interfaces.ECPublicKey
 import java.security.spec.X509EncodedKeySpec
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.withContext
 import org.json.JSONArray
 import org.json.JSONObject
@@ -35,7 +39,7 @@ class RepositoryCatalogClient(context: Context) {
 
     suspend fun refresh(descriptor: RepositoryDescriptor): CatalogRefreshResult = withContext(Dispatchers.IO) {
         val cached = loadCache(descriptor)
-        runCatching {
+        try {
             require(descriptor.validate() == null) { descriptor.validate() ?: "Repository descriptor is invalid." }
             when (val index = readHttps(descriptor.indexUrl, MAX_INDEX_BYTES, cached?.etag, cached?.lastModified)) {
                 is HttpResponse.NotModified -> requireNotNull(cached) { "Repository cache is missing." }.catalog
@@ -49,13 +53,24 @@ class RepositoryCatalogClient(context: Context) {
                     }
                 }
             }
-        }.fold(
-            onSuccess = { catalog -> CatalogRefreshResult.Success(catalog, fromCache = false) },
-            onFailure = { error ->
-                cached?.let { CatalogRefreshResult.Success(it.catalog, fromCache = true) }
-                    ?: CatalogRefreshResult.Failure(error.message ?: "Could not refresh repository.")
-            },
-        )
+            CatalogRefreshResult.Success(catalog = when (val index = readHttps(descriptor.indexUrl, MAX_INDEX_BYTES, cached?.etag, cached?.lastModified)) {
+                is HttpResponse.NotModified -> requireNotNull(cached) { "Repository cache is missing." }.catalog
+                is HttpResponse.Ok -> {
+                    val signature = (readHttps("${descriptor.indexUrl}.sig", MAX_SIGNATURE_BYTES) as? HttpResponse.Ok)?.bytes
+                        ?: error("Repository signature was not returned.")
+                    require(verify(descriptor, index.bytes, signature)) { "Repository signature is invalid." }
+                    parseCatalog(index.bytes, descriptor).also { parsed ->
+                        require(parsed.validate(descriptor) == null) { parsed.validate(descriptor) ?: "Repository catalog is invalid." }
+                        saveCache(descriptor, index.bytes, signature, index.etag, index.lastModified)
+                    }
+                }
+            }, fromCache = false)
+        } catch (error: CancellationException) {
+            throw error
+        } catch (error: Throwable) {
+            cached?.let { CatalogRefreshResult.Success(it.catalog, fromCache = true) }
+                ?: CatalogRefreshResult.Failure(error.message ?: "Could not refresh repository.")
+        }
     }
 
     private fun loadCache(descriptor: RepositoryDescriptor): CachedCatalog? = runCatching {
@@ -178,6 +193,7 @@ class RepositoryCatalogClient(context: Context) {
         permissions = getJSONArray("permissions").toPermissions(),
         androidPackageName = optString("androidPackageName").ifBlank { null },
         androidSigningCertificateSha256 = optString("androidSigningCertificateSha256").ifBlank { null },
+        supportUrl = optString("supportUrl").ifBlank { null },
     )
 
     private fun JSONArray.toPermissions(): Set<ExtensionPermission> = buildSet {

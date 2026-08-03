@@ -8,6 +8,7 @@ import dev.relay.music.lastfm.PendingScrobble
 import dev.relay.music.lastfm.ScrobbleListenTimer
 import dev.relay.music.lastfm.ScrobbleRule
 import dev.relay.music.lastfm.pendingScrobbleId
+import dev.relay.music.model.isMeaningfulMetadata
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -28,14 +29,27 @@ class LastFmTracker(
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private val flushMutex = Mutex()
     private var active: ActiveTrack? = null
+    private var occurrence: PlaybackOccurrence? = null
+
+    init {
+        flushPending()
+    }
 
     fun onPlayerEvent(player: Player) {
-        val nowElapsedMs = SystemClock.elapsedRealtime()
-        val mediaItem = player.currentMediaItem
-        val mediaId = mediaItem?.mediaId
+        updateOccurrence(player, player.currentMediaItem, explicitTransition = false)
+    }
 
-        if (active?.mediaId != mediaId) {
+    fun onMediaItemTransition(player: Player, mediaItem: MediaItem?) {
+        updateOccurrence(player, mediaItem, explicitTransition = true)
+    }
+
+    private fun updateOccurrence(player: Player, mediaItem: MediaItem?, explicitTransition: Boolean) {
+        val nowElapsedMs = SystemClock.elapsedRealtime()
+        val nextOccurrence = mediaItem?.let { PlaybackOccurrence(it.mediaId, player.currentMediaItemIndex) }
+
+        if (playbackOccurrenceChanged(occurrence, nextOccurrence, explicitTransition)) {
             active?.let { finish(it, nowElapsedMs) }
+            occurrence = nextOccurrence
             active = mediaItem?.asActiveTrack()?.also {
                 it.durationMs = player.duration.validDuration()
             }
@@ -64,6 +78,7 @@ class LastFmTracker(
             }
         }
         active = null
+        occurrence = null
         scope.cancel()
         api.close()
     }
@@ -123,8 +138,14 @@ class LastFmTracker(
                     when (val result = api.scrobble(session.key, entity.asPendingScrobble())) {
                         is LastFmResult.Success -> database.pendingScrobbleDao().delete(entity.id)
                         is LastFmResult.Failure -> {
-                            if (result.kind == LastFmResult.Kind.INVALID_SESSION) sessionKeyStore.clear()
-                            return@withLock
+                            when (pendingFailureAction(result.kind)) {
+                                PendingFailureAction.RETAIN_AND_STOP -> return@withLock
+                                PendingFailureAction.INVALIDATE_AND_STOP -> {
+                                    sessionKeyStore.clear()
+                                    return@withLock
+                                }
+                                PendingFailureAction.DISCARD_AND_CONTINUE -> database.pendingScrobbleDao().delete(entity.id)
+                            }
                         }
                     }
                 }
@@ -156,8 +177,8 @@ class LastFmTracker(
     }
 
     private fun MediaItem.asActiveTrack(): ActiveTrack? {
-        val title = mediaMetadata.title?.toString()?.cleanMetadata() ?: return null
-        val artist = mediaMetadata.artist?.toString()?.cleanMetadata() ?: return null
+        val title = mediaMetadata.title?.toString()?.takeIf { it.isMeaningfulMetadata() }?.trim() ?: return null
+        val artist = mediaMetadata.artist?.toString()?.takeIf { it.isMeaningfulMetadata() }?.trim() ?: return null
         return ActiveTrack(
             mediaId = mediaId,
             title = title,
@@ -165,9 +186,6 @@ class LastFmTracker(
             album = mediaMetadata.albumTitle?.toString()?.trim()?.takeIf { it.isNotBlank() },
         )
     }
-
-    private fun String.cleanMetadata(): String? =
-        trim().takeIf { it.isNotBlank() && !it.equals("<unknown>", ignoreCase = true) }
 
     private fun Long.validDuration(): Long? =
         takeIf { it != C.TIME_UNSET && it > 0 }
@@ -182,4 +200,20 @@ class LastFmTracker(
         var isPlaying: Boolean = false,
         var startedAtEpochSeconds: Long? = null,
     )
+}
+
+internal data class PlaybackOccurrence(val mediaId: String, val queueIndex: Int)
+
+internal fun playbackOccurrenceChanged(
+    current: PlaybackOccurrence?,
+    next: PlaybackOccurrence?,
+    explicitTransition: Boolean,
+): Boolean = explicitTransition || current != next
+
+internal enum class PendingFailureAction { RETAIN_AND_STOP, INVALIDATE_AND_STOP, DISCARD_AND_CONTINUE }
+
+internal fun pendingFailureAction(kind: LastFmResult.Kind): PendingFailureAction = when (kind) {
+    LastFmResult.Kind.TEMPORARY -> PendingFailureAction.RETAIN_AND_STOP
+    LastFmResult.Kind.INVALID_SESSION -> PendingFailureAction.INVALIDATE_AND_STOP
+    LastFmResult.Kind.PERMANENT -> PendingFailureAction.DISCARD_AND_CONTINUE
 }

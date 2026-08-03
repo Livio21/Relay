@@ -4,12 +4,10 @@ import org.json.JSONObject
 
 /** Parses an untrusted Theme Pack JSON document into the validated data-only model. */
 object ThemePackReader {
-    private const val MAX_BYTES = 64 * 1024
-
     fun parse(json: String): Result<ThemePack> = runCatching {
-        require(json.length <= MAX_BYTES) { "Theme pack file is too large." }
-        val root = JSONObject(json)
-        val colors = root.getJSONObject("colors")
+        require(json.toByteArray(Charsets.UTF_8).size <= THEME_PACK_MAX_BYTES) { "Theme pack file is too large." }
+        val root = JSONObject(json).requireOnly("schemaVersion", "id", "version", "name", "colors", "presentation")
+        val colors = root.getJSONObject("colors").requireOnly("ink", "panel", "line", "paper", "muted", "signal", "danger")
         val presentation = root.optJSONObject("presentation")
         val pack = ThemePack(
             schemaVersion = root.optInt("schemaVersion", 1),
@@ -25,36 +23,42 @@ object ThemePackReader {
                 danger = colors.getString("danger"),
             ),
             presentation = presentation?.let {
+                it.requireOnly(
+                    "libraryLayout", "playerLayout", "background", "backgroundAsset", "effects",
+                    "typography", "chrome", "icons",
+                )
                 ThemePresentation(
-                    libraryLayout = it.optString("libraryLayout", "LIST").asEnum(ThemeLibraryLayout.LIST),
-                    playerLayout = it.optString("playerLayout", "STANDARD").asEnum(ThemePlayerLayout.STANDARD),
-                    background = it.optString("background", "NONE").asEnum(ThemeBackground.NONE),
+                    libraryLayout = it.optString("libraryLayout", "LIST").asEnum(),
+                    playerLayout = it.optString("playerLayout", "STANDARD").asEnum(),
+                    background = it.optString("background", "NONE").asEnum(),
                     backgroundAsset = it.optString("backgroundAsset").ifBlank { null },
-                    // Unknown future effect kinds are dropped rather than misread as another effect.
                     effects = it.optJSONArray("effects")?.let { effects ->
-                        (0 until effects.length()).mapNotNull { index ->
-                            val effect = effects.getJSONObject(index)
-                            val kind = ThemeEffectKind.entries.firstOrNull { candidate -> candidate.name == effect.getString("kind") }
-                            kind?.let { ThemeEffect(it, effect.optDouble("strength", 1.0).toFloat()) }
+                        require(effects.length() <= 4) { "Theme pack has too many effects." }
+                        (0 until effects.length()).map { index ->
+                            val effect = effects.getJSONObject(index).requireOnly("kind", "strength")
+                            ThemeEffect(effect.getString("kind").asEnum(), effect.optDouble("strength", 1.0).toFloat())
                         }
                     }.orEmpty(),
                     typography = it.optJSONObject("typography")?.let { typography ->
+                        typography.requireOnly("contentFont", "utilityFont")
                         ThemeTypography(
-                            contentFont = typography.optString("contentFont", "SANS").asEnum(ThemeFont.SANS),
-                            utilityFont = typography.optString("utilityFont", "MONO").asEnum(ThemeFont.MONO),
+                            contentFont = typography.optString("contentFont", "SANS").asEnum(),
+                            utilityFont = typography.optString("utilityFont", "MONO").asEnum(),
                         )
                     } ?: ThemeTypography(),
                     chrome = it.optJSONObject("chrome")?.let { chrome ->
+                        chrome.requireOnly("borderWidthDp", "cornerRadiusDp", "fill", "shadow")
                         ThemeChrome(
                             borderWidthDp = chrome.optInt("borderWidthDp", 1),
                             cornerRadiusDp = chrome.optInt("cornerRadiusDp", 0),
-                            fill = chrome.optString("fill", "OUTLINE").asEnum(ThemeFill.OUTLINE),
-                            shadow = chrome.optString("shadow", "NONE").asEnum(ThemeShadow.NONE),
+                            fill = chrome.optString("fill", "OUTLINE").asEnum(),
+                            shadow = chrome.optString("shadow", "NONE").asEnum(),
                         )
                     } ?: ThemeChrome(),
                     icons = it.optJSONObject("icons")?.let { icons ->
+                        icons.requireOnly("set")
                         ThemeIcons(
-                            set = icons.optString("set", "TEXT").asEnum(ThemeIconSet.TEXT),
+                            set = icons.optString("set", "TEXT").asEnum(),
                         )
                     } ?: ThemeIcons(),
                 )
@@ -62,6 +66,18 @@ object ThemePackReader {
         )
         pack.validate()?.let { error(it) }
         pack
+    }
+
+    /** Signed repositories currently carry one JSON document, never packaged assets or code. */
+    fun parseCatalogArtifact(json: String, expectedId: String, expectedVersion: String): Result<ThemePack> = runCatching {
+        require(json.toByteArray(Charsets.UTF_8).size <= THEME_PACK_MAX_BYTES) { "Theme pack file is too large." }
+        require(JSONObject(json).getString("version") == expectedVersion) {
+            "Theme pack version does not match its catalog entry."
+        }
+        parse(json).getOrThrow().also { pack ->
+            require(pack.id == expectedId) { "Theme pack ID does not match its catalog entry." }
+            require(pack.presentation.background != ThemeBackground.ASSET) { "Repository theme packs cannot contain assets." }
+        }
     }
 
     fun toJson(pack: ThemePack): String = JSONObject()
@@ -98,6 +114,11 @@ object ThemePackReader {
         )
         .toString()
 
-    private inline fun <reified T : Enum<T>> String.asEnum(fallback: T): T =
-        enumValues<T>().firstOrNull { it.name == this } ?: fallback
+    private inline fun <reified T : Enum<T>> String.asEnum(): T =
+        enumValues<T>().firstOrNull { it.name == this } ?: error("Theme pack option is unsupported.")
+
+    private fun JSONObject.requireOnly(vararg allowed: String): JSONObject = apply {
+        val names = keys()
+        while (names.hasNext()) require(names.next() in allowed) { "Theme pack contains an unsupported field." }
+    }
 }

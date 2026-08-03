@@ -1,10 +1,14 @@
 package dev.relay.music
 
 import dev.relay.music.model.activeLineIndex
+import dev.relay.music.model.formatLrcTimestamp
 import dev.relay.music.model.parseLrc
+import dev.relay.music.model.prepareLrcForSave
+import dev.relay.music.model.stampLrcLine
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertNull
+import kotlin.test.assertTrue
 
 class LyricsTest {
     @Test
@@ -67,5 +71,39 @@ class LyricsTest {
         // With a +500 ms offset the line is reached half a second earlier.
         assertEquals(0, lyrics.activeLineIndex(9_500))
         assertEquals(-1, lyrics.activeLineIndex(9_499))
+    }
+
+    @Test
+    fun timestampInsertionUsesCentiseconds() {
+        assertEquals("[01:02.34]", formatLrcTimestamp(62_349))
+        assertEquals("[00:00.00]", formatLrcTimestamp(-1))
+    }
+
+    @Test
+    fun stampTargetsTheSelectedLineAndReplacesItsOldTimestamp() {
+        val lyrics = "One\n[00:09.00]Two\nThree"
+
+        assertEquals(
+            "One\n[00:12.34]Two\nThree",
+            stampLrcLine(lyrics, lyrics.indexOf("Two"), 12_349),
+        )
+        assertEquals("[00:03.00]One\nTwo", stampLrcLine("One\nTwo", 1, 3_000))
+    }
+
+    @Test
+    fun saveOrdersValidTimestampsAndKeepsPlainLyricsPlain() {
+        val lrc = "[00:10.00]Second\n[ar:Relay]\n[00:01.50]First"
+
+        assertEquals(
+            "[ar:Relay]\n[00:01.50]First\n[00:10.00]Second",
+            prepareLrcForSave(lrc).getOrThrow(),
+        )
+        assertEquals("One\nTwo", prepareLrcForSave("One\nTwo").getOrThrow())
+    }
+
+    @Test
+    fun saveRejectsMalformedOrPartiallyTimedLyrics() {
+        assertTrue(prepareLrcForSave("[00:72.00]Nope").isFailure)
+        assertTrue(prepareLrcForSave("[00:01.00]One\nTwo").isFailure)
     }
 }

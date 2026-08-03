@@ -17,6 +17,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import dev.relay.music.playback.PlaybackState
+import dev.relay.music.playback.RepeatMode
 import dev.relay.music.ui.RelayColors
 import dev.relay.music.ui.RelayType
 
@@ -28,6 +29,7 @@ internal fun QueueScreen(
     onRemoveIndex: (Int) -> Unit,
     onMoveIndex: (Int, Int) -> Unit,
     onShuffleEnabledChange: (Boolean) -> Unit,
+    onRepeatModeChange: (RepeatMode) -> Unit,
     onReshuffle: () -> Unit,
     onOpenShuffleSettings: () -> Unit,
     onClear: () -> Unit,
@@ -55,6 +57,13 @@ internal fun QueueScreen(
             modifier = Modifier.fillMaxWidth().padding(top = 12.dp),
             horizontalArrangement = Arrangement.spacedBy(8.dp),
         ) {
+            TransportAction(
+                label = repeatLabel(playbackState.repeatMode),
+                description = "Change repeat mode; current setting ${repeatDescription(playbackState.repeatMode)}",
+                enabled = queue.isNotEmpty(),
+                onClick = { onRepeatModeChange(playbackState.repeatMode.next()) },
+                modifier = Modifier.weight(1f),
+            )
             TransportAction(
                 label = "SHUFFLE ${if (playbackState.shuffleEnabled) "ON" else "OFF"}",
                 description = "Turn playback shuffle ${if (playbackState.shuffleEnabled) "off" else "on"}",
@@ -117,4 +126,22 @@ internal fun QueueScreen(
             )
         }
     }
+}
+
+internal fun RepeatMode.next(): RepeatMode = when (this) {
+    RepeatMode.OFF -> RepeatMode.ALL
+    RepeatMode.ALL -> RepeatMode.ONE
+    RepeatMode.ONE -> RepeatMode.OFF
+}
+
+internal fun repeatLabel(mode: RepeatMode): String = when (mode) {
+    RepeatMode.OFF -> "REPEAT OFF"
+    RepeatMode.ALL -> "REPEAT QUEUE"
+    RepeatMode.ONE -> "REPEAT TRACK"
+}
+
+private fun repeatDescription(mode: RepeatMode): String = when (mode) {
+    RepeatMode.OFF -> "repeat off"
+    RepeatMode.ALL -> "repeat the queue"
+    RepeatMode.ONE -> "repeat the current track"
 }

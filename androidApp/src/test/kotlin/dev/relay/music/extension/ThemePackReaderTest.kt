@@ -9,6 +9,7 @@ class ThemePackReaderTest {
         {
           "schemaVersion": 1,
           "id": "relay.theme.zune",
+          "version": "1.0.0",
           "name": "Zune",
           "colors": {
             "ink": "#0B0B0B", "panel": "#151515", "line": "#454545", "paper": "#F4F4F4",
@@ -27,10 +28,11 @@ class ThemePackReaderTest {
           }
         }
     """.trimIndent()
+    private val safeZuneJson = zuneJson.lineSequence().filterNot { "FUTURE_SHADER" in it }.joinToString("\n")
 
     @Test
-    fun parsesTheZunePackAndDropsUnknownEffects() {
-        val pack = ThemePackReader.parse(zuneJson).getOrThrow()
+    fun parsesTheZunePackAndRejectsExecutableOrUnknownData() {
+        val pack = ThemePackReader.parse(safeZuneJson).getOrThrow()
 
         assertEquals("relay.theme.zune", pack.id)
         assertEquals("#FF4F00", pack.colors.signal)
@@ -38,16 +40,32 @@ class ThemePackReaderTest {
         assertEquals(listOf(ThemeEffectKind.GRAIN, ThemeEffectKind.VIGNETTE), pack.presentation.effects.map { it.kind })
         assertEquals(ThemeIconSet.SYMBOLS, pack.presentation.icons.set)
         assertEquals(zuneJson.length <= 64 * 1024, true)
+        assertTrue(ThemePackReader.parse(zuneJson).isFailure)
+        assertTrue(ThemePackReader.parse(zuneJson.replace("\"name\": \"Zune\"", "\"name\": \"Zune\", \"css\": \"*{}\"")).isFailure)
     }
 
     @Test
     fun roundTripsThroughJsonAndRejectsInvalidPacks() {
-        val pack = ThemePackReader.parse(zuneJson).getOrThrow()
+        val pack = ThemePackReader.parse(safeZuneJson).getOrThrow()
         val reparsed = ThemePackReader.parse(ThemePackReader.toJson(pack)).getOrThrow()
         assertEquals(pack, reparsed)
 
         assertTrue(ThemePackReader.parse(zuneJson.replace("#FF4F00", "orange")).isFailure)
         assertTrue(ThemePackReader.parse("{}").isFailure)
         assertTrue(ThemePackReader.parse(zuneJson.replace("relay.theme.zune", "Bad Id!")).isFailure)
+    }
+
+    @Test
+    fun catalogArtifactMustMatchIdAndVersionAndCannotReferenceAssets() {
+        assertTrue(ThemePackReader.parseCatalogArtifact(safeZuneJson, "relay.theme.zune", "1.0.0").isSuccess)
+        assertTrue(ThemePackReader.parseCatalogArtifact(safeZuneJson, "other.theme", "1.0.0").isFailure)
+        assertTrue(ThemePackReader.parseCatalogArtifact(safeZuneJson, "relay.theme.zune", "2.0.0").isFailure)
+        assertTrue(
+            ThemePackReader.parseCatalogArtifact(
+                safeZuneJson.replace("\"background\": \"ARTWORK_BLEED\"", "\"background\": \"ASSET\", \"backgroundAsset\": \"image.png\""),
+                "relay.theme.zune",
+                "1.0.0",
+            ).isFailure,
+        )
     }
 }

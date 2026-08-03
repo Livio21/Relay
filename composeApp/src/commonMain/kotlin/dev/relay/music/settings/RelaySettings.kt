@@ -4,6 +4,7 @@ import dev.relay.music.extension.RepositoryDescriptor
 import dev.relay.music.extension.ThemePack
 import dev.relay.music.extension.builtInThemePacks
 import dev.relay.music.playback.ShuffleProfile
+import dev.relay.music.wallpaper.WallpaperPreset
 import dev.relay.music.extension.InstalledExtension
 import kotlinx.coroutines.flow.StateFlow
 
@@ -20,6 +21,7 @@ enum class EqualizerPreset {
 const val EQUALIZER_BAND_COUNT = 5
 const val EQUALIZER_MIN_LEVEL_MB = -1_200
 const val EQUALIZER_MAX_LEVEL_MB = 1_200
+const val RELAY_SETTINGS_SCHEMA_VERSION = 13
 
 fun equalizerPresetLevels(preset: EqualizerPreset): List<Int> = when (preset) {
     EqualizerPreset.FLAT, EqualizerPreset.CUSTOM -> List(EQUALIZER_BAND_COUNT) { 0 }
@@ -33,11 +35,12 @@ fun normalizedEqualizerBands(levels: List<Int>): List<Int> = List(EQUALIZER_BAND
 }
 
 data class RelaySettings(
-    val schemaVersion: Int = 8,
+    val schemaVersion: Int = RELAY_SETTINGS_SCHEMA_VERSION,
     val resumeQueue: Boolean = true,
     val playbackSpeed: Float = 1f,
     val fadeInMs: Int = 0,
     val fadeOutMs: Int = 0,
+    val crossfadeMs: Int = 0,
     val equalizerEnabled: Boolean = false,
     val equalizerPreset: EqualizerPreset = EqualizerPreset.FLAT,
     val equalizerBandLevels: List<Int> = List(EQUALIZER_BAND_COUNT) { 0 },
@@ -55,6 +58,10 @@ data class RelaySettings(
     /** Imported data-only theme packs and the one currently applied. */
     val themePacks: List<ThemePack> = builtInThemePacks,
     val activeThemePackId: String? = null,
+    /** Lock-screen widgets hide title/artist unless the user opts in. */
+    val showLockscreenMetadata: Boolean = false,
+    /** Static system-wallpaper choices. No artwork, URLs, or playback data is persisted here. */
+    val wallpaperPreset: WallpaperPreset = WallpaperPreset(),
 )
 
 fun RelaySettings.activeShuffleProfile(): ShuffleProfile =

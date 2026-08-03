@@ -25,6 +25,7 @@ class AndroidExtensionInstaller(private val context: Context) {
                 "Requires extension API ${entry.api.minimum}-${entry.api.maximum}; Relay supports $EXTENSION_API_VERSION.",
             )
         }
+        artifactValidationError(entry, artifact)?.let { return ExtensionInstallRequest.Refused(it) }
         verifier.verifyArchive(entry, artifact)?.let { return ExtensionInstallRequest.Refused(it) }
         val installer = context.packageManager.packageInstaller
         val sessionId = runCatching {

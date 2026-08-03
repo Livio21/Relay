@@ -14,12 +14,15 @@ import dev.relay.music.extension.RepositoryDescriptor
 import dev.relay.music.lastfm.LastFmConnectionState
 import dev.relay.music.model.MetadataCandidate
 import dev.relay.music.model.MetadataOverride
+import dev.relay.music.model.AlbumChartSpec
 import dev.relay.music.model.ListeningEvent
+import dev.relay.music.model.LocalProfile
 import dev.relay.music.model.OfflineDownload
 import dev.relay.music.model.Playlist
 import dev.relay.music.model.Track
 import dev.relay.music.model.TrackFlags
 import dev.relay.music.playback.PlaybackState
+import dev.relay.music.playback.RepeatMode
 import dev.relay.music.settings.BackupSchedule
 import dev.relay.music.settings.RelaySettings
 import dev.relay.music.ui.applyThemePack
@@ -44,6 +47,8 @@ data class RelayAppState(
     val lyricsMessage: String?,
     val lastFmConnectionState: LastFmConnectionState,
     val lastFmErrorMessage: String?,
+    /** Result of the explicit local-history import; never a tracker/session status. */
+    val lastFmHistoryImportMessage: String? = null,
     val repositoryCatalogs: Map<String, List<ExtensionCatalogEntry>>,
     val repositoryMessages: Map<String, String>,
     val importedRepository: RepositoryDescriptor? = null,
@@ -59,10 +64,46 @@ data class RelayAppState(
     val remoteTrackDownload: RemoteTrackDownloadProgress? = null,
     val downloadedRemoteTrackKeys: Set<String> = emptySet(),
     val offlineDownloads: List<OfflineDownload> = emptyList(),
+    val syncConflicts: List<SyncConflictNotice> = emptyList(),
+    val lanSync: LanSyncUiState = LanSyncUiState(),
+    val pairedDevices: List<PairedDeviceUi> = emptyList(),
+    val playTogether: PlayTogetherUiState = PlayTogetherUiState(),
+    val localProfile: LocalProfile? = null,
     /** Recorded plays behind the insights view. */
     val listeningEvents: List<ListeningEvent> = emptyList(),
     /** Supplied by the host so insight ranges are computed against a real clock. */
     val nowEpochMs: Long = 0L,
+    /** Saved chart requests; images are generated locally and are not canonical records. */
+    val albumChartSpecs: List<AlbumChartSpec> = emptyList(),
+)
+
+/** A persisted notice that an incoming sync value was kept separate from this device's value. */
+data class SyncConflictNotice(val id: String, val description: String, val canUseReceived: Boolean)
+
+/** Ephemeral, user-visible state for one explicit local-network data-sync session. */
+data class LanSyncUiState(
+    val message: String? = null,
+    val hostAddress: String? = null,
+    val pairingCode: String? = null,
+    val peerFingerprint: String? = null,
+    val awaitingConfirmation: Boolean = false,
+    val active: Boolean = false,
+    val preparedMusicBytes: Long? = null,
+    val warning: String? = null,
+)
+
+data class PairedDeviceUi(val id: String, val name: String)
+
+/** Ephemeral state for a foreground-only synchronized-playback session. */
+data class PlayTogetherUiState(
+    val message: String? = null,
+    val hostAddress: String? = null,
+    val pairingCode: String? = null,
+    val peerFingerprint: String? = null,
+    val awaitingConfirmation: Boolean = false,
+    val active: Boolean = false,
+    val driftMs: Long? = null,
+    val resyncRequired: Boolean = false,
 )
 
 /** User intents emitted by the shared UI. Platform hosts decide how each intent is fulfilled. */
@@ -79,6 +120,23 @@ data class RelayAppActions(
     val onChooseStorageRoot: () -> Unit,
     val onBackupExport: () -> Unit,
     val onBackupImport: () -> Unit,
+    val onSyncExport: (() -> Unit)? = null,
+    val onSyncImport: (() -> Unit)? = null,
+    val onDismissSyncConflict: (String) -> Unit = {},
+    val onUseReceivedSyncConflict: (String) -> Unit = {},
+    val onStartLanSyncHost: () -> Unit = {},
+    val onJoinLanSync: (String) -> Unit = {},
+    val onConfirmLanSync: (Boolean) -> Unit = {},
+    val onCancelLanSync: () -> Unit = {},
+    val onUnpairDevice: (String) -> Unit = {},
+    val onSelectMusicTransfer: () -> Unit = {},
+    val onImportMusicTransfer: () -> Unit = {},
+    val onPrepareLanMusicTransfer: () -> Unit = {},
+    val onStartPlayTogetherHost: () -> Unit = {},
+    val onJoinPlayTogether: (String) -> Unit = {},
+    val onConfirmPlayTogether: (Boolean) -> Unit = {},
+    val onLeavePlayTogether: () -> Unit = {},
+    val onResyncPlayTogether: () -> Unit = {},
     val onBackupScheduleChange: (BackupSchedule) -> Unit,
     val onAutoBackupExpiryChange: (Int) -> Unit,
     val onCreatePlaylist: (String) -> Unit,
@@ -91,12 +149,18 @@ data class RelayAppActions(
     val onRenamePlaylist: (Long, String) -> Unit = { _, _ -> },
     val onDeletePlaylist: (Long) -> Unit = {},
     val onSaveMetadataOverride: (Track, MetadataOverride) -> Unit,
-    val onSearchMetadata: (Track, String, String) -> Unit,
+    val onSearchMetadata: (Track, String, String, Boolean) -> Unit,
     val onMetadataReviewIgnored: (Track) -> Unit,
     val onLoadLyrics: (Track) -> Unit,
     val onSaveLyrics: (Track, String) -> Unit,
     val onFetchLyrics: (Track) -> Unit,
     val onLastFmAction: () -> Unit,
+    val onImportLastFmHistory: () -> Unit = {},
+    val onProfileNameChange: (String) -> Unit = {},
+    val onUnlinkLastFmHistory: (Boolean) -> Unit = {},
+    val onCreateAlbumChart: (dev.relay.music.model.InsightsRange, Int) -> Unit = { _, _ -> },
+    val onRemoveAlbumChart: (String) -> Unit = {},
+    val onExportAlbumChart: (AlbumChartSpec) -> Unit = {},
     val onBackActionChanged: ((() -> Unit)?) -> Unit,
     val onDebugScrobble: (() -> Unit)? = null,
     val onAddTrustedRepository: (RepositoryDescriptor) -> Unit = {},
@@ -104,7 +168,7 @@ data class RelayAppActions(
     val onRemoveTrustedRepository: (String) -> Unit = {},
     val onRefreshRepository: (RepositoryDescriptor) -> Unit = {},
     val onInstallExtension: (RepositoryDescriptor, ExtensionCatalogEntry) -> Unit = { _, _ -> },
-    val onSetExtensionEnabled: (RepositoryDescriptor, ExtensionCatalogEntry, Boolean) -> Unit = { _, _, _ -> },
+    val onSetExtensionEnabled: (InstalledExtension, Boolean) -> Unit = { _, _ -> },
     val onUninstallExtension: (InstalledExtension) -> Unit = {},
     val onSearchExtensionSources: (SourceBrowseRequest) -> Unit = {},
     val onLoadSourceSettings: (String) -> Unit = {},
@@ -115,6 +179,7 @@ data class RelayAppActions(
     val onDeleteAllDownloads: () -> Unit = {},
     val onAudioSettingsChange: ((RelaySettings) -> Unit)? = null,
     val onShuffleEnabledChange: (Boolean) -> Unit = {},
+    val onRepeatModeChange: (RepeatMode) -> Unit = {},
     val onShuffleQueue: () -> Unit = {},
     val onPlayQueueIndex: (Int) -> Unit = {},
     val onRemoveQueueIndex: (Int) -> Unit = {},
@@ -126,6 +191,11 @@ data class RelayAppActions(
     val onImportThemePack: (() -> Unit)? = null,
     val onApplyThemePack: (String?) -> Unit = {},
     val onRemoveThemePack: (String) -> Unit = {},
+    /** Opens a validated HTTPS page declared by a signed extension catalog. */
+    val onOpenExternalUrl: (String) -> Unit = {},
+    val onWallpaperSettingsChange: ((RelaySettings) -> Unit)? = null,
+    /** Android hosts open the system wallpaper preview; other platforms leave this unavailable. */
+    val onOpenAlbumWallpaperPicker: (() -> Unit)? = null,
 )
 
 @Composable

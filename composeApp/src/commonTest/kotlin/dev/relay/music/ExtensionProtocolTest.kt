@@ -7,6 +7,7 @@ import dev.relay.music.extension.ExtensionHandshake
 import dev.relay.music.extension.ExtensionKind
 import dev.relay.music.extension.ExtensionNegotiation
 import dev.relay.music.extension.ExtensionCatalogEntry
+import dev.relay.music.extension.ExtensionPermission
 import dev.relay.music.extension.RepositoryCatalog
 import dev.relay.music.extension.RepositoryDescriptor
 import dev.relay.music.extension.ThemeColors
@@ -19,12 +20,15 @@ import dev.relay.music.extension.negotiate
 import dev.relay.music.extension.validate
 import dev.relay.music.extension.asInstalled
 import dev.relay.music.extension.disabled
+import dev.relay.music.extension.resolvedCatalogEntry
 import dev.relay.music.extension.SourceBrowseRequest
 import dev.relay.music.extension.SourceSearchField
 import dev.relay.music.extension.SourceSettingDefinition
 import dev.relay.music.extension.SourceSettingType
 import dev.relay.music.extension.sanitizeSourceSettingValues
 import dev.relay.music.extension.isCompatible
+import dev.relay.music.extension.isSupportedOnIos
+import dev.relay.music.extension.repositoryTrustError
 import dev.relay.music.extension.toSourceQuery
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -49,6 +53,10 @@ class ExtensionProtocolTest {
         assertIs<ExtensionNegotiation.Refused>(
             handshake.copy(api = ApiRange(EXTENSION_API_VERSION + 1, EXTENSION_API_VERSION + 1)).negotiate(),
         )
+        assertIs<ExtensionNegotiation.Refused>(handshake.copy(kind = ExtensionKind.THEME_PACK).negotiate())
+        assertIs<ExtensionNegotiation.Refused>(handshake.copy(id = "Bad ID").negotiate())
+        assertIs<ExtensionNegotiation.Refused>(handshake.copy(capabilities = setOf("browse", "BAD CAPABILITY")).negotiate())
+        assertIs<ExtensionNegotiation.Refused>(handshake.copy(authentication = emptySet()).negotiate())
     }
 
     @Test
@@ -97,6 +105,8 @@ class ExtensionProtocolTest {
             "Android extension package identity is incomplete.",
             RepositoryCatalog(descriptor.id, listOf(entry.copy(androidPackageName = "example.relay.source"))).validate(descriptor),
         )
+        assertNull(entry.copy(supportUrl = "https://example.invalid/support?source=relay").validate())
+        assertEquals("Extension support link is invalid.", entry.copy(supportUrl = "http://example.invalid/support").validate())
         // An entry for a different Relay API is a valid catalog row that reads as incompatible;
         // it must never invalidate the whole repository catalog.
         val incompatible = entry.copy(api = ApiRange(EXTENSION_API_VERSION + 1, EXTENSION_API_VERSION + 1))
@@ -104,10 +114,52 @@ class ExtensionProtocolTest {
         assertEquals(false, incompatible.isCompatible)
         assertEquals(true, entry.isCompatible)
         assertNull(entry.asInstalled(descriptor.id).validate())
+        val installed = entry.asInstalled(descriptor.id)
+        assertEquals(entry, installed.resolvedCatalogEntry())
+        assertEquals(
+            "Installed extension catalog snapshot does not match its identity.",
+            installed.copy(catalogSnapshot = entry.copy(version = "2.0.0")).validate(),
+        )
+        val legacy = installed.copy(catalogSnapshot = null)
+        assertNull(legacy.resolvedCatalogEntry(listOf(entry.copy(version = "2.0.0"))))
+        assertEquals(entry, legacy.resolvedCatalogEntry(listOf(entry.copy(version = "2.0.0"), entry)))
         assertNull(entry.asInstalled(descriptor.id, "Extension rejected the handshake.").validate())
         val disabled = entry.asInstalled(descriptor.id).disabled(" ")
         assertEquals("Extension failed to respond.", disabled.disabledReason)
         assertNull(disabled.validate())
+
+        val theme = entry.copy(id = "example.theme", kind = ExtensionKind.THEME_PACK)
+        assertNull(theme.validate())
+        assertNull(theme.asInstalled(descriptor.id).validate())
+        assertEquals(
+            "Theme packs cannot request permissions.",
+            theme.copy(permissions = setOf(ExtensionPermission.NETWORK)).validate(),
+        )
+        assertEquals(
+            "Theme pack artifact is too large.",
+            theme.copy(artifactSizeBytes = 64L * 1024 + 1).validate(),
+        )
+        assertEquals(
+            "Theme packs cannot contain an Android package.",
+            theme.copy(
+                androidPackageName = "dev.relay.example.theme",
+                androidSigningCertificateSha256 = "c".repeat(64),
+            ).validate(),
+        )
+        assertEquals(false, entry.isSupportedOnIos)
+        assertEquals(true, theme.isSupportedOnIos)
+        assertEquals(false, theme.copy(api = ApiRange(EXTENSION_API_VERSION + 1, EXTENSION_API_VERSION + 1)).isSupportedOnIos)
+
+        assertNull(repositoryTrustError(emptyList(), descriptor))
+        assertEquals("Repository is already trusted.", repositoryTrustError(listOf(descriptor), descriptor))
+        assertEquals(
+            "Repository signing key changed. Remove the trusted repository before adding the new key.",
+            repositoryTrustError(listOf(descriptor), descriptor.copy(signingPublicKey = "B".repeat(43) + "=")),
+        )
+        assertEquals(
+            "Repository origin is already trusted under another ID.",
+            repositoryTrustError(listOf(descriptor), descriptor.copy(id = "other.extensions")),
+        )
     }
 
     @Test

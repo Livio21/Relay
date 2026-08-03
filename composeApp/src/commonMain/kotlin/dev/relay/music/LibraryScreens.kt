@@ -17,7 +17,11 @@ import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.text.BasicText
+import androidx.compose.foundation.lazy.grid.GridCells
+import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
+import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -35,9 +39,12 @@ import androidx.compose.ui.unit.dp
 import dev.relay.music.model.Playlist
 import dev.relay.music.model.Track
 import dev.relay.music.model.TrackFlags
+import dev.relay.music.model.resolveEffectiveMetadata
 import dev.relay.music.playback.PlaybackState
 import dev.relay.music.ui.RelayColors
+import dev.relay.music.ui.RelayPresentation
 import dev.relay.music.ui.RelayType
+import dev.relay.music.extension.ThemeLibraryLayout
 import coil3.compose.AsyncImage
 
 @Composable
@@ -67,17 +74,34 @@ internal fun TrackList(
                 modifier = Modifier.padding(16.dp).semantics { contentDescription = "No tracks match this search" },
             )
         }
-        androidx.compose.foundation.lazy.LazyColumn(modifier = Modifier.fillMaxSize()) {
-            items(count = tracks.size, key = { tracks[it].sourceId + ":" + tracks[it].id }) { index ->
-                TrackRow(
-                    track = tracks[index],
-                    active = playbackState.currentTrack?.let(::trackKey) == trackKey(tracks[index]),
-                    favorite = trackKey(tracks[index]) in favoriteTrackKeys,
-                    progress = if (playbackState.currentTrack?.let(::trackKey) == trackKey(tracks[index])) playbackProgress(playbackState) else 0f,
-                    onClick = { onTrackSelected(tracks[index]) },
-                    onOptions = { menuTrack = tracks[index] },
-                )
-                Rule()
+        when (RelayPresentation.libraryLayout) {
+            ThemeLibraryLayout.LIST -> androidx.compose.foundation.lazy.LazyColumn(modifier = Modifier.fillMaxSize()) {
+                items(count = tracks.size, key = { tracks[it].sourceId + ":" + tracks[it].id }) { index ->
+                    val track = tracks[index]
+                    TrackRow(
+                        track = track,
+                        active = playbackState.currentTrack?.let(::trackKey) == trackKey(track),
+                        favorite = trackKey(track) in favoriteTrackKeys,
+                        progress = if (playbackState.currentTrack?.let(::trackKey) == trackKey(track)) playbackProgress(playbackState) else 0f,
+                        onClick = { onTrackSelected(track) },
+                        onOptions = { menuTrack = track },
+                    )
+                    Rule()
+                }
+            }
+            ThemeLibraryLayout.GRID -> LazyVerticalGrid(
+                columns = GridCells.Adaptive(156.dp),
+                modifier = Modifier.fillMaxSize(),
+            ) {
+                items(tracks, key = ::trackKey) { track ->
+                    TrackGridCard(
+                        track = track,
+                        active = playbackState.currentTrack?.let(::trackKey) == trackKey(track),
+                        progress = if (playbackState.currentTrack?.let(::trackKey) == trackKey(track)) playbackProgress(playbackState) else 0f,
+                        onClick = { onTrackSelected(track) },
+                        onOptions = { menuTrack = track },
+                    )
+                }
             }
         }
         menuTrack?.let { track ->
@@ -107,6 +131,63 @@ internal fun TrackList(
 }
 
 @Composable
+private fun TrackGridCard(
+    track: Track,
+    active: Boolean,
+    progress: Float,
+    onClick: () -> Unit,
+    onOptions: () -> Unit,
+) {
+    val effective = track.resolveEffectiveMetadata()
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .background(if (active) RelayColors.Panel else RelayColors.Ink)
+            .semantics { contentDescription = "Play ${effective.display.title} by ${effective.display.artist}" }
+            .combinedClickable(role = Role.Button, onClick = onClick, onLongClick = onOptions),
+    ) {
+        Box(Modifier.fillMaxWidth().aspectRatio(1f).background(RelayColors.Panel)) {
+            track.artworkUri?.let { artworkUri ->
+                AsyncImage(
+                    model = artworkUri,
+                    contentDescription = "Album cover for ${effective.display.album}",
+                    contentScale = ContentScale.Crop,
+                    modifier = Modifier.fillMaxSize(),
+                )
+            }
+            if (active) Box(
+                Modifier.align(Alignment.BottomStart).fillMaxWidth(progress).height(4.dp).background(RelayColors.Signal),
+            )
+        }
+        BasicText(
+            effective.display.title,
+            style = RelayType.Track,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+            modifier = Modifier.fillMaxWidth().padding(start = 12.dp, end = 12.dp, top = 10.dp),
+        )
+        Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+            BasicText(
+                effective.display.artist,
+                style = RelayType.Metadata,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.weight(1f).padding(start = 12.dp, bottom = 10.dp),
+            )
+            BasicText(
+                "⋮",
+                style = RelayType.Track.copy(color = RelayColors.Muted),
+                modifier = Modifier
+                    .heightIn(min = 48.dp)
+                    .semantics { contentDescription = "Options for ${effective.display.title}" }
+                    .clickable(role = Role.Button, onClick = onOptions)
+                    .padding(horizontal = 16.dp, vertical = 14.dp),
+            )
+        }
+    }
+}
+
+@Composable
 internal fun TrackRow(
     track: Track,
     active: Boolean,
@@ -115,19 +196,16 @@ internal fun TrackRow(
     onClick: () -> Unit,
     onOptions: () -> Unit,
 ) {
-    val metadata = buildString {
-        append(track.artist.ifBlank { "Unknown artist" })
-        append(" — ")
-        append(track.album?.takeIf { it.isNotBlank() } ?: "Unknown album")
-    }
-    val title = track.title.ifBlank { "Untitled track" }
+    val effective = track.resolveEffectiveMetadata()
+    val metadata = "${effective.display.artist} — ${effective.display.album}"
+    val title = effective.display.title
 
     Row(
         modifier = Modifier
             .fillMaxWidth()
             .heightIn(min = 72.dp)
             .background(if (active) RelayColors.Panel else RelayColors.Ink)
-            .semantics { contentDescription = "Play $title by ${track.artist}" }
+            .semantics { contentDescription = "Play $title by ${effective.display.artist}" }
             .combinedClickable(role = Role.Button, onClick = onClick, onLongClick = onOptions),
         verticalAlignment = Alignment.CenterVertically,
     ) {
@@ -148,7 +226,7 @@ internal fun TrackRow(
         track.artworkUri?.let { artworkUri ->
             AsyncImage(
                 model = artworkUri,
-                contentDescription = "Album cover for ${track.album ?: title}",
+                contentDescription = "Album cover for ${effective.display.album}",
                 contentScale = ContentScale.Crop,
                 modifier = Modifier
                     .padding(start = 12.dp)
@@ -207,6 +285,7 @@ internal fun BoxScope.TrackOptionsMenu(
     onEnqueue: () -> Unit,
     onFlagsChange: (TrackFlags) -> Unit,
 ) {
+    val title = track.resolveEffectiveMetadata().display.title
     Column(
         modifier = Modifier
             .align(Alignment.BottomCenter)
@@ -215,15 +294,15 @@ internal fun BoxScope.TrackOptionsMenu(
             .border(1.dp, RelayColors.Line)
             .padding(12.dp),
     ) {
-        BasicText(track.title.ifBlank { "Untitled track" }, style = RelayType.Track, maxLines = 1, overflow = TextOverflow.Ellipsis)
+        BasicText(title, style = RelayType.Track, maxLines = 1, overflow = TextOverflow.Ellipsis)
         Row(modifier = Modifier.fillMaxWidth().padding(top = 8.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             TransportAction(if (favorite) "UNSAVE" else "SAVE", "Toggle favorite", true, onFavoriteToggle, Modifier.weight(1f))
             TransportAction("METADATA", "Edit metadata", true, onMetadata, Modifier.weight(1f))
             TransportAction("PLAYLIST", "Add to a playlist", true, onAddToPlaylist, Modifier.weight(1f))
         }
         Row(modifier = Modifier.fillMaxWidth().padding(top = 8.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            TransportAction("PLAY NEXT", "Play ${track.title} after the current track", true, onPlayNext, Modifier.weight(1f))
-            TransportAction("QUEUE", "Add ${track.title} to the end of the queue", true, onEnqueue, Modifier.weight(1f))
+            TransportAction("PLAY NEXT", "Play $title after the current track", true, onPlayNext, Modifier.weight(1f))
+            TransportAction("QUEUE", "Add $title to the end of the queue", true, onEnqueue, Modifier.weight(1f))
         }
         Row(modifier = Modifier.fillMaxWidth().padding(top = 8.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             TransportAction(if (flags.hidden) "UNHIDE" else "HIDE", "Toggle hidden", true, { onFlagsChange(flags.copy(hidden = !flags.hidden)) }, Modifier.weight(1f))

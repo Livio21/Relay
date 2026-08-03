@@ -1,6 +1,7 @@
 package dev.relay.music.lastfm
 
 import android.content.Context
+import android.content.SharedPreferences
 import android.security.keystore.KeyGenParameterSpec
 import android.security.keystore.KeyProperties
 import android.util.Base64
@@ -96,6 +97,14 @@ class SessionKeyStore(context: Context) {
 
     fun clear() {
         preferences.edit { clear() }
+    }
+
+    fun observeChanges(onChanged: () -> Unit): AutoCloseable {
+        val listener = SharedPreferences.OnSharedPreferenceChangeListener { _, key ->
+            if (key == null || key == USERNAME || key == SESSION_KEY) onChanged()
+        }
+        preferences.registerOnSharedPreferenceChangeListener(listener)
+        return AutoCloseable { preferences.unregisterOnSharedPreferenceChangeListener(listener) }
     }
 
     private fun encrypt(value: String): String {

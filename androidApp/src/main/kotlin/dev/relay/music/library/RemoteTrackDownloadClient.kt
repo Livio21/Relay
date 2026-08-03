@@ -79,6 +79,7 @@ class RemoteTrackDownloadClient(private val context: Context) {
 
     private fun openSecureConnection(initialUrl: String, headers: Map<String, String>): HttpURLConnection {
         var url = URL(initialUrl)
+        var extensionHeaders = headers
         repeat(MAX_REDIRECTS + 1) { redirect ->
             require(url.protocol == "https") { "Download redirected away from HTTPS." }
             val connection = (url.openConnection() as? HttpURLConnection) ?: error("Download URL is invalid.")
@@ -86,7 +87,7 @@ class RemoteTrackDownloadClient(private val context: Context) {
             connection.connectTimeout = CONNECT_TIMEOUT_MS
             connection.readTimeout = READ_TIMEOUT_MS
             connection.setRequestProperty("User-Agent", USER_AGENT)
-            headers.forEach { (name, value) -> connection.setRequestProperty(name, value) }
+            extensionHeaders.forEach { (name, value) -> connection.setRequestProperty(name, value) }
             when (connection.responseCode) {
                 in 300..399 -> {
                     if (redirect == MAX_REDIRECTS) {
@@ -97,7 +98,9 @@ class RemoteTrackDownloadClient(private val context: Context) {
                         connection.disconnect()
                         error("Download redirect had no location.")
                     }
-                    url = URL(url, location)
+                    val nextUrl = URL(url, location)
+                    extensionHeaders = forwardedExtensionHeaders(extensionHeaders, url, nextUrl)
+                    url = nextUrl
                     connection.disconnect()
                 }
                 else -> return connection
@@ -115,3 +118,14 @@ class RemoteTrackDownloadClient(private val context: Context) {
         const val USER_AGENT = "Relay/0.1 Android remote download"
     }
 }
+
+/** Source credentials belong to the origin that requested them, never to a redirect target. */
+internal fun forwardedExtensionHeaders(headers: Map<String, String>, from: URL, to: URL): Map<String, String> =
+    if (from.sameOriginAs(to)) headers else emptyMap()
+
+private fun URL.sameOriginAs(other: URL): Boolean =
+    protocol.equals(other.protocol, ignoreCase = true) &&
+        host.equals(other.host, ignoreCase = true) &&
+        effectivePort() == other.effectivePort()
+
+private fun URL.effectivePort(): Int = if (port >= 0) port else defaultPort

@@ -11,6 +11,7 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.absoluteOffset
@@ -23,6 +24,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.text.BasicText
+import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -35,6 +37,7 @@ import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.platform.LocalClipboard
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.onSizeChanged
@@ -60,6 +63,21 @@ import dev.relay.music.playback.MissingShuffleValue
 import dev.relay.music.playback.ShuffleProfile
 import dev.relay.music.playback.newShuffleProfile
 import dev.relay.music.settings.RelaySettings
+import dev.relay.music.wallpaper.WallpaperArtworkFit
+import dev.relay.music.wallpaper.ArtworkFilter
+import dev.relay.music.wallpaper.WallpaperAnchor
+import dev.relay.music.wallpaper.WallpaperCanvasBackground
+import dev.relay.music.wallpaper.WallpaperElement
+import dev.relay.music.wallpaper.WallpaperFont
+import dev.relay.music.wallpaper.WallpaperPageOffset
+import dev.relay.music.wallpaper.WallpaperPreset
+import dev.relay.music.wallpaper.WallpaperTextAlignment
+import dev.relay.music.wallpaper.WallpaperVisibility
+import dev.relay.music.wallpaper.WallpaperVisualizer
+import dev.relay.music.wallpaper.defaultWallpaperElement
+import dev.relay.music.wallpaper.label
+import dev.relay.music.wallpaper.wallpaperElementBounds
+import dev.relay.music.wallpaper.withLayout
 import dev.relay.music.settings.activeShuffleProfile
 import dev.relay.music.settings.withActiveShuffleProfile
 import dev.relay.music.settings.withActiveShuffleProfileId
@@ -79,6 +97,27 @@ internal fun SettingsScreen(
     onChooseStorageRoot: () -> Unit,
     onBackupExport: () -> Unit,
     onBackupImport: () -> Unit,
+    onSyncExport: (() -> Unit)? = null,
+    onSyncImport: (() -> Unit)? = null,
+    syncConflicts: List<SyncConflictNotice> = emptyList(),
+    onDismissSyncConflict: (String) -> Unit = {},
+    onUseReceivedSyncConflict: (String) -> Unit = {},
+    lanSync: LanSyncUiState = LanSyncUiState(),
+    pairedDevices: List<PairedDeviceUi> = emptyList(),
+    playTogether: PlayTogetherUiState = PlayTogetherUiState(),
+    onStartLanSyncHost: () -> Unit = {},
+    onJoinLanSync: (String) -> Unit = {},
+    onConfirmLanSync: (Boolean) -> Unit = {},
+    onCancelLanSync: () -> Unit = {},
+    onUnpairDevice: (String) -> Unit = {},
+    onSelectMusicTransfer: () -> Unit = {},
+    onImportMusicTransfer: () -> Unit = {},
+    onPrepareLanMusicTransfer: () -> Unit = {},
+    onStartPlayTogetherHost: () -> Unit = {},
+    onJoinPlayTogether: (String) -> Unit = {},
+    onConfirmPlayTogether: (Boolean) -> Unit = {},
+    onLeavePlayTogether: () -> Unit = {},
+    onResyncPlayTogether: () -> Unit = {},
     onBackupScheduleChange: (BackupSchedule) -> Unit,
     onAutoBackupExpiryChange: (Int) -> Unit,
     connectionState: LastFmConnectionState,
@@ -95,6 +134,7 @@ internal fun SettingsScreen(
     repositoryImportVersion: Long,
     onRefreshRepository: (RepositoryDescriptor) -> Unit,
     onAudioSettingsChange: ((RelaySettings) -> Unit)?,
+    onWallpaperSettingsChange: ((RelaySettings) -> Unit)? = null,
     offlineDownloads: List<OfflineDownload> = emptyList(),
     onDeleteDownload: (String, String) -> Unit = { _, _ -> },
     onDeleteAllDownloads: () -> Unit = {},
@@ -104,6 +144,7 @@ internal fun SettingsScreen(
     onRemoveThemePack: (String) -> Unit = {},
     submenu: SettingsSubmenu?,
     onSubmenuChange: (SettingsSubmenu?) -> Unit,
+    onOpenAlbumWallpaperPicker: (() -> Unit)? = null,
 ) {
     fun toggle(item: SettingsSubmenu) = onSubmenuChange(if (submenu == item) null else item)
     Column(
@@ -132,6 +173,11 @@ internal fun SettingsScreen(
         SettingsAccordion("BACKUP AND RESTORE", submenu == SettingsSubmenu.BACKUP, { toggle(SettingsSubmenu.BACKUP) }) {
             BackupSettings(settings, onBackupExport, onBackupImport, onBackupScheduleChange, onAutoBackupExpiryChange)
         }
+        if (onSyncExport != null && onSyncImport != null) {
+            SettingsAccordion("DEVICE SYNC", submenu == SettingsSubmenu.SYNC, { toggle(SettingsSubmenu.SYNC) }) {
+                SyncSettings(onSyncExport, onSyncImport, syncConflicts, onDismissSyncConflict, onUseReceivedSyncConflict, lanSync, pairedDevices, onStartLanSyncHost, onJoinLanSync, onConfirmLanSync, onCancelLanSync, onUnpairDevice, onSelectMusicTransfer, onImportMusicTransfer, onPrepareLanMusicTransfer, playTogether, onStartPlayTogetherHost, onJoinPlayTogether, onConfirmPlayTogether, onLeavePlayTogether, onResyncPlayTogether)
+            }
+        }
         SettingsAccordion("SOURCE REPOSITORIES", submenu == SettingsSubmenu.REPOSITORIES, { toggle(SettingsSubmenu.REPOSITORIES) }) {
             RepositorySettings(
                 settings,
@@ -149,10 +195,15 @@ internal fun SettingsScreen(
         SettingsAccordion("THEME PACKS", submenu == SettingsSubmenu.THEME_PACKS, { toggle(SettingsSubmenu.THEME_PACKS) }) {
             ThemePackSettings(settings, onImportThemePack, onApplyThemePack, onRemoveThemePack)
         }
+        onOpenAlbumWallpaperPicker?.let { openPicker ->
+            SettingsAccordion("WALLPAPER", submenu == SettingsSubmenu.WALLPAPER, { toggle(SettingsSubmenu.WALLPAPER) }) {
+                WallpaperSettings(settings, onWallpaperSettingsChange, openPicker)
+            }
+        }
     }
 }
 
-internal enum class SettingsSubmenu { PLAYBACK, AUDIO, TRACKING, METADATA, STORAGE, BACKUP, REPOSITORIES, THEME_PACKS }
+internal enum class SettingsSubmenu { PLAYBACK, AUDIO, TRACKING, METADATA, STORAGE, BACKUP, SYNC, REPOSITORIES, THEME_PACKS, WALLPAPER }
 
 @Composable
 private fun SettingsAccordion(label: String, expanded: Boolean, onClick: () -> Unit, content: @Composable () -> Unit) {
@@ -229,7 +280,20 @@ internal fun PlaybackSettings(
             ) {
                 picker = PlaybackPicker.FADE_OUT
             }
-            if (settings.fadeInMs > 0 || settings.fadeOutMs > 0) {
+            SettingsChoice(
+                "CROSSFADE",
+                fadeLabel(settings.crossfadeMs),
+                "Choose overlap duration between compatible tracks",
+            ) {
+                picker = PlaybackPicker.CROSSFADE
+            }
+            if (settings.crossfadeMs > 0) {
+                BasicText(
+                    "Crossfade replaces fade-out when it can overlap tracks. Effects use sequential fades; a failed preload returns to a normal transition.",
+                    style = RelayType.Metadata,
+                    modifier = Modifier.padding(top = 8.dp),
+                )
+            } else if (settings.fadeInMs > 0 || settings.fadeOutMs > 0) {
                 BasicText(
                     "Fades apply when tracks change. They do not overlap tracks.",
                     style = RelayType.Metadata,
@@ -259,13 +323,30 @@ internal fun PlaybackSettings(
                 onSelect = { index -> onAudioSettingsChange?.invoke(settings.copy(playbackSpeed = PLAYBACK_SPEEDS[index])); picker = null },
                 onDismiss = { picker = null },
             )
-            PlaybackPicker.FADE_IN, PlaybackPicker.FADE_OUT -> ValuePickerDialog(
-                title = if (picker == PlaybackPicker.FADE_IN) "FADE IN" else "FADE OUT",
+            PlaybackPicker.FADE_IN, PlaybackPicker.FADE_OUT, PlaybackPicker.CROSSFADE -> ValuePickerDialog(
+                title = when (picker) {
+                    PlaybackPicker.FADE_IN -> "FADE IN"
+                    PlaybackPicker.FADE_OUT -> "FADE OUT"
+                    PlaybackPicker.CROSSFADE -> "CROSSFADE"
+                    else -> error("Unexpected playback picker")
+                },
                 choices = FADE_DURATIONS.map(::fadeLabel),
-                selectedIndex = FADE_DURATIONS.indexOf(if (picker == PlaybackPicker.FADE_IN) settings.fadeInMs else settings.fadeOutMs),
+                selectedIndex = FADE_DURATIONS.indexOf(
+                    when (picker) {
+                        PlaybackPicker.FADE_IN -> settings.fadeInMs
+                        PlaybackPicker.FADE_OUT -> settings.fadeOutMs
+                        PlaybackPicker.CROSSFADE -> settings.crossfadeMs
+                        else -> 0
+                    },
+                ),
                 onSelect = { index ->
                     onAudioSettingsChange?.invoke(
-                        if (picker == PlaybackPicker.FADE_IN) settings.copy(fadeInMs = FADE_DURATIONS[index]) else settings.copy(fadeOutMs = FADE_DURATIONS[index]),
+                        when (picker) {
+                            PlaybackPicker.FADE_IN -> settings.copy(fadeInMs = FADE_DURATIONS[index])
+                            PlaybackPicker.FADE_OUT -> settings.copy(fadeOutMs = FADE_DURATIONS[index])
+                            PlaybackPicker.CROSSFADE -> settings.copy(crossfadeMs = FADE_DURATIONS[index])
+                            else -> settings
+                        },
                     )
                     picker = null
                 },
@@ -623,7 +704,448 @@ internal fun SettingsChoice(label: String, value: String, description: String, o
     }
 }
 
-private enum class PlaybackPicker { SPEED, FADE_IN, FADE_OUT, SHUFFLE_PROFILE }
+@Composable
+private fun WallpaperSettings(
+    settings: RelaySettings,
+    onSettingsChange: ((RelaySettings) -> Unit)?,
+    onOpenPicker: () -> Unit,
+) {
+    var selectedElementLabel by remember { mutableStateOf(settings.wallpaperPreset.elements.firstOrNull()?.label ?: "ARTWORK") }
+    var selectedFilterLabel by remember { mutableStateOf(settings.wallpaperPreset.filters.firstOrNull()?.label ?: "GRAYSCALE") }
+    var picker by remember { mutableStateOf<WallpaperPickerRequest?>(null) }
+    val preset = settings.wallpaperPreset
+    val selectedElement = preset.elements.firstOrNull { it.label == selectedElementLabel }
+    val selectedFilter = preset.filters.firstOrNull { it.label == selectedFilterLabel }
+    fun save(updated: WallpaperPreset) = onSettingsChange?.invoke(settings.copy(wallpaperPreset = updated))
+    fun choose(title: String, values: List<String>, selected: Int, onSelect: (Int) -> Unit) {
+        picker = WallpaperPickerRequest(title, values, selected) { index -> onSelect(index); picker = null }
+    }
+    fun replaceSelected(element: WallpaperElement) = save(preset.copy(elements = preset.elements.map {
+        if (it.label == selectedElementLabel) element else it
+    }))
+    fun replaceSelectedFilter(filter: ArtworkFilter) = save(preset.copy(filters = preset.filters.map {
+        if (it.label == selectedFilterLabel) filter else it
+    }))
+
+    Column {
+        BasicText("ALBUM ART WALLPAPER", style = RelayType.Track, modifier = Modifier.padding(bottom = 8.dp))
+        BasicText("Uses only Relay's cached artwork and playback snapshot. Filters are static data and are cached between track or preset changes.", style = RelayType.Metadata)
+        WallpaperPreview(preset, Modifier.fillMaxWidth().height(320.dp).padding(top = 12.dp))
+        preset.warnings.forEach { warning ->
+            BasicText(warning, style = RelayType.Metadata.copy(color = RelayColors.Signal), modifier = Modifier.padding(top = 8.dp))
+        }
+        onSettingsChange?.let { onChange ->
+            SettingsChoice(
+                "CANVAS",
+                preset.canvas.background.name.replace('_', ' '),
+                "Choose a solid or artwork-derived canvas",
+            ) {
+                val values = WallpaperCanvasBackground.entries
+                val next = values[(values.indexOf(preset.canvas.background) + 1) % values.size]
+                save(preset.copy(canvas = preset.canvas.copy(background = next)))
+            }
+            if (preset.canvas.background == WallpaperCanvasBackground.SOLID) {
+                SettingsChoice(
+                    "SOLID COLOR",
+                    if (preset.canvas.solidColorArgb == 0xFFF3F0E8L) "PAPER" else "INK",
+                    "Choose the solid wallpaper canvas color",
+                ) {
+                    val next = if (preset.canvas.solidColorArgb == 0xFFF3F0E8L) 0xFF101010 else 0xFFF3F0E8
+                    save(preset.copy(canvas = preset.canvas.copy(solidColorArgb = next)))
+                }
+            }
+            SettingsChoice(
+                "ARTWORK CROP",
+                preset.canvas.artworkFit.name,
+                "Choose whether artwork fills or fits the wallpaper",
+            ) {
+                val next = if (preset.canvas.artworkFit == WallpaperArtworkFit.FILL) WallpaperArtworkFit.FIT else WallpaperArtworkFit.FILL
+                save(preset.copy(canvas = preset.canvas.copy(artworkFit = next)))
+            }
+            SettingsChoice(
+                "PAGE OFFSET",
+                preset.canvas.pageOffset.name,
+                "Choose whether home-screen pages shift artwork",
+            ) {
+                val next = if (preset.canvas.pageOffset == WallpaperPageOffset.FIXED) WallpaperPageOffset.FOLLOW else WallpaperPageOffset.FIXED
+                save(preset.copy(canvas = preset.canvas.copy(pageOffset = next)))
+            }
+            SettingsChoice(
+                "WALLPAPER METADATA",
+                if (preset.showMetadata) "SHOW" else "HIDE",
+                "Show or hide title, artist, and album wallpaper elements",
+            ) {
+                save(preset.copy(showMetadata = !preset.showMetadata))
+            }
+            SettingsChoice(
+                "LOCK SCREEN INFO",
+                if (settings.showLockscreenMetadata) "SHOW" else "HIDE",
+                "Show or hide title and artist in lock-screen widgets",
+            ) {
+                onChange(settings.copy(showLockscreenMetadata = !settings.showLockscreenMetadata))
+            }
+            SettingsChoice(
+                "BATTERY SAVER",
+                if (preset.batterySaver) "ON" else "OFF",
+                "Disable audio animation and continuous progress redraws",
+            ) {
+                save(preset.copy(batterySaver = !preset.batterySaver))
+            }
+
+            BasicText("ELEMENTS", style = RelayType.Track, modifier = Modifier.padding(top = 20.dp, bottom = 8.dp))
+            if (preset.elements.isNotEmpty()) {
+                SettingsChoice("ELEMENT", selectedElement?.label ?: preset.elements.first().label, "Choose an element to edit") {
+                    choose("WALLPAPER ELEMENT", preset.elements.map(WallpaperElement::label), preset.elements.indexOf(selectedElement).coerceAtLeast(0)) {
+                        selectedElementLabel = preset.elements[it].label
+                    }
+                }
+            }
+            selectedElement?.let { element ->
+                val layout = element.layout
+                @Composable fun percentPicker(label: String, value: Float, values: List<Int>, update: (Float) -> Unit) {
+                    SettingsChoice(label, "${(value * 100).roundToInt()}%", "Set $label for ${element.label}") {
+                        choose(label, values.map { "$it%" }, values.indexOf((value * 100).roundToInt()).coerceAtLeast(0)) { update(values[it] / 100f) }
+                    }
+                }
+                percentPicker("X", layout.x, NORMALIZED_STEPS) { replaceSelected(element.withLayout(layout.copy(x = it))) }
+                percentPicker("Y", layout.y, NORMALIZED_STEPS) { replaceSelected(element.withLayout(layout.copy(y = it))) }
+                percentPicker("WIDTH", layout.width, SIZE_STEPS) { replaceSelected(element.withLayout(layout.copy(width = it))) }
+                percentPicker("HEIGHT", layout.height, HEIGHT_STEPS) { replaceSelected(element.withLayout(layout.copy(height = it))) }
+                percentPicker("OPACITY", layout.opacity, NORMALIZED_STEPS) { replaceSelected(element.withLayout(layout.copy(opacity = it))) }
+                SettingsChoice("ANCHOR", layout.anchor.name.replace('_', ' '), "Set anchor for ${element.label}") {
+                    val values = WallpaperAnchor.entries
+                    choose("ANCHOR", values.map { it.name.replace('_', ' ') }, values.indexOf(layout.anchor)) { replaceSelected(element.withLayout(layout.copy(anchor = values[it]))) }
+                }
+                SettingsChoice("VISIBLE ON", layout.visibility.name, "Set visibility for ${element.label}") {
+                    val values = WallpaperVisibility.entries
+                    choose("VISIBLE ON", values.map(WallpaperVisibility::name), values.indexOf(layout.visibility)) { replaceSelected(element.withLayout(layout.copy(visibility = values[it]))) }
+                }
+                if (element !is WallpaperElement.Artwork && element !is WallpaperElement.Progress) {
+                    SettingsChoice("FONT", layout.font.name, "Set font for ${element.label}") {
+                        val values = WallpaperFont.entries
+                        choose("FONT", values.map(WallpaperFont::name), values.indexOf(layout.font)) { replaceSelected(element.withLayout(layout.copy(font = values[it]))) }
+                    }
+                    SettingsChoice("ALIGN", layout.alignment.name, "Set text alignment for ${element.label}") {
+                        val values = WallpaperTextAlignment.entries
+                        choose("ALIGN", values.map(WallpaperTextAlignment::name), values.indexOf(layout.alignment)) { replaceSelected(element.withLayout(layout.copy(alignment = values[it]))) }
+                    }
+                }
+                val index = preset.elements.indexOf(element)
+                Row(Modifier.fillMaxWidth().padding(top = 4.dp), horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                    TransportAction("BACK", "Move ${element.label} behind", index > 0, {
+                        save(preset.copy(elements = preset.elements.swap(index, index - 1)))
+                    }, Modifier.weight(1f))
+                    TransportAction("FRONT", "Move ${element.label} forward", index < preset.elements.lastIndex, {
+                        save(preset.copy(elements = preset.elements.swap(index, index + 1)))
+                    }, Modifier.weight(1f))
+                    TransportAction("REMOVE", "Remove ${element.label}", true, {
+                        val remaining = preset.elements.filterNot { it.label == element.label }
+                        selectedElementLabel = remaining.firstOrNull()?.label ?: "ARTWORK"
+                        save(preset.copy(elements = remaining))
+                    }, Modifier.weight(1f))
+                }
+            }
+            val missingElements = WALLPAPER_ELEMENT_LABELS.filter { label -> preset.elements.none { it.label == label } }
+            TransportAction("ADD ELEMENT", "Add a wallpaper composition element", missingElements.isNotEmpty(), {
+                choose("ADD ELEMENT", missingElements, -1) { index ->
+                    selectedElementLabel = missingElements[index]
+                    save(preset.copy(elements = preset.elements + defaultWallpaperElement(missingElements[index])))
+                }
+            }, Modifier.fillMaxWidth().padding(top = 8.dp))
+
+            BasicText("FILTERS", style = RelayType.Track, modifier = Modifier.padding(top = 20.dp, bottom = 8.dp))
+            if (preset.filters.isNotEmpty()) {
+                SettingsChoice("FILTER", selectedFilter?.label ?: preset.filters.first().label, "Choose an artwork filter to edit") {
+                    choose("ARTWORK FILTER", preset.filters.map(ArtworkFilter::label), preset.filters.indexOf(selectedFilter).coerceAtLeast(0)) {
+                        selectedFilterLabel = preset.filters[it].label
+                    }
+                }
+            }
+            selectedFilter?.let { filter ->
+                when (filter) {
+                    is ArtworkFilter.Grayscale -> FilterAmountChoice(filter.amount) {
+                        choose("FILTER AMOUNT", NORMALIZED_STEPS.map { "$it%" }, NORMALIZED_STEPS.indexOf((filter.amount * 100).roundToInt()).coerceAtLeast(0)) { replaceSelectedFilter(filter.copy(amount = NORMALIZED_STEPS[it] / 100f)) }
+                    }
+                    is ArtworkFilter.Blur -> SettingsChoice("RADIUS", "${filter.radius.roundToInt()}", "Set blur radius") {
+                        choose("BLUR RADIUS", FILTER_STEPS.map(Int::toString), FILTER_STEPS.indexOf(filter.radius.roundToInt()).coerceAtLeast(0)) { replaceSelectedFilter(filter.copy(radius = FILTER_STEPS[it].toFloat())) }
+                    }
+                    is ArtworkFilter.Duotone -> {
+                        FilterAmountChoice(filter.amount) {
+                            choose("FILTER AMOUNT", NORMALIZED_STEPS.map { "$it%" }, NORMALIZED_STEPS.indexOf((filter.amount * 100).roundToInt()).coerceAtLeast(0)) { replaceSelectedFilter(filter.copy(amount = NORMALIZED_STEPS[it] / 100f)) }
+                        }
+                        SettingsChoice("COLORS", if (filter.shadowColorArgb == 0xFF112244L) "BLUE / ORANGE" else "INK / PAPER", "Choose duotone colors") {
+                            replaceSelectedFilter(if (filter.shadowColorArgb == 0xFF112244L) filter.copy(shadowColorArgb = 0xFF101010, highlightColorArgb = 0xFFF3F0E8) else filter.copy(shadowColorArgb = 0xFF112244, highlightColorArgb = 0xFFFFAA55))
+                        }
+                    }
+                    is ArtworkFilter.BrightnessContrast -> {
+                        SettingsChoice("BRIGHTNESS", "${(filter.brightness * 100).roundToInt()}%", "Set brightness") {
+                            choose("BRIGHTNESS", SIGNED_STEPS.map { "$it%" }, SIGNED_STEPS.indexOf((filter.brightness * 100).roundToInt()).coerceAtLeast(0)) { replaceSelectedFilter(filter.copy(brightness = SIGNED_STEPS[it] / 100f)) }
+                        }
+                        SettingsChoice("CONTRAST", "${(filter.contrast * 100).roundToInt()}%", "Set contrast") {
+                            choose("CONTRAST", CONTRAST_STEPS.map { "$it%" }, CONTRAST_STEPS.indexOf((filter.contrast * 100).roundToInt()).coerceAtLeast(0)) { replaceSelectedFilter(filter.copy(contrast = CONTRAST_STEPS[it] / 100f)) }
+                        }
+                    }
+                    is ArtworkFilter.Vignette -> FilterAmountChoice(filter.strength) {
+                        choose("FILTER AMOUNT", NORMALIZED_STEPS.map { "$it%" }, NORMALIZED_STEPS.indexOf((filter.strength * 100).roundToInt()).coerceAtLeast(0)) { replaceSelectedFilter(filter.copy(strength = NORMALIZED_STEPS[it] / 100f)) }
+                    }
+                    is ArtworkFilter.Grain -> FilterAmountChoice(filter.strength) {
+                        choose("FILTER AMOUNT", NORMALIZED_STEPS.map { "$it%" }, NORMALIZED_STEPS.indexOf((filter.strength * 100).roundToInt()).coerceAtLeast(0)) { replaceSelectedFilter(filter.copy(strength = NORMALIZED_STEPS[it] / 100f)) }
+                    }
+                }
+                TransportAction("REMOVE FILTER", "Remove ${filter.label}", true, {
+                    val remaining = preset.filters.filterNot { it.label == filter.label }
+                    selectedFilterLabel = remaining.firstOrNull()?.label ?: "GRAYSCALE"
+                    save(preset.copy(filters = remaining))
+                }, Modifier.fillMaxWidth().padding(top = 4.dp))
+            }
+            val missingFilters = WALLPAPER_FILTER_LABELS.filter { label -> preset.filters.none { it.label == label } }
+            TransportAction("ADD FILTER", "Add a cached static artwork filter", missingFilters.isNotEmpty(), {
+                choose("ADD FILTER", missingFilters, -1) { index ->
+                    selectedFilterLabel = missingFilters[index]
+                    save(preset.copy(filters = preset.filters + defaultArtworkFilter(missingFilters[index])))
+                }
+            }, Modifier.fillMaxWidth().padding(top = 8.dp))
+
+            SettingsChoice(
+                "VISUALIZER",
+                preset.visualizer.name,
+                "Choose the wallpaper visualizer",
+            ) {
+                val values = WallpaperVisualizer.entries
+                choose("VISUALIZER", values.map(WallpaperVisualizer::name), values.indexOf(preset.visualizer)) {
+                    save(preset.copy(visualizer = values[it], soundReactive = values[it] != WallpaperVisualizer.OFF || preset.soundReactive))
+                }
+            }
+            SettingsChoice(
+                "SOUND REACTIVE",
+                if (preset.soundReactive) "ON" else "OFF",
+                "Allow the wallpaper to react to Relay playback; Android will request microphone permission",
+            ) {
+                save(preset.copy(soundReactive = !preset.soundReactive))
+            }
+            TransportAction("RESET PRESET", "Reset wallpaper composition and filters", true, {
+                selectedElementLabel = "ARTWORK"
+                selectedFilterLabel = "GRAYSCALE"
+                save(WallpaperPreset())
+            }, Modifier.fillMaxWidth().padding(top = 12.dp))
+        }
+        TransportAction(
+            "OPEN SYSTEM PICKER",
+            "Preview and enable Relay album art wallpaper",
+            true,
+            onOpenPicker,
+            Modifier.fillMaxWidth().padding(top = 16.dp),
+        )
+    }
+    picker?.let { request ->
+        ValuePickerDialog(request.title, request.choices, request.selectedIndex, request.onSelect) { picker = null }
+    }
+}
+
+@Composable
+private fun WallpaperPreview(preset: WallpaperPreset, modifier: Modifier = Modifier) {
+    BoxWithConstraints(modifier.background(if (preset.canvas.background == WallpaperCanvasBackground.ARTWORK_AVERAGE) RelayColors.Line else RelayColors.Ink).border(1.dp, RelayColors.Line)) {
+        preset.elements.forEach { element ->
+            val bounds = wallpaperElementBounds(element.layout, 1f, 1f)
+            Box(
+                Modifier
+                    .absoluteOffset(x = maxWidth * bounds.left, y = maxHeight * bounds.top)
+                    .width(maxWidth * bounds.width)
+                    .height(maxHeight * bounds.height)
+                    .graphicsLayer(alpha = element.layout.opacity)
+                    .background(if (element is WallpaperElement.Artwork) RelayColors.Line else RelayColors.Panel)
+                    .border(1.dp, RelayColors.Paper),
+                contentAlignment = Alignment.Center,
+            ) {
+                BasicText(element.label, style = RelayType.Utility, maxLines = 1)
+            }
+        }
+    }
+}
+
+@Composable
+private fun FilterAmountChoice(value: Float, onClick: () -> Unit) {
+    SettingsChoice("AMOUNT", "${(value * 100).roundToInt()}%", "Set filter amount") {
+        onClick()
+    }
+}
+
+private data class WallpaperPickerRequest(
+    val title: String,
+    val choices: List<String>,
+    val selectedIndex: Int,
+    val onSelect: (Int) -> Unit,
+)
+
+private val ArtworkFilter.label: String
+    get() = when (this) {
+        is ArtworkFilter.Grayscale -> "GRAYSCALE"
+        is ArtworkFilter.Blur -> "BLUR"
+        is ArtworkFilter.Duotone -> "DUOTONE"
+        is ArtworkFilter.BrightnessContrast -> "BRIGHTNESS / CONTRAST"
+        is ArtworkFilter.Vignette -> "VIGNETTE"
+        is ArtworkFilter.Grain -> "GRAIN"
+    }
+
+private fun defaultArtworkFilter(label: String): ArtworkFilter = when (label) {
+    "BLUR" -> ArtworkFilter.Blur()
+    "DUOTONE" -> ArtworkFilter.Duotone()
+    "BRIGHTNESS / CONTRAST" -> ArtworkFilter.BrightnessContrast()
+    "VIGNETTE" -> ArtworkFilter.Vignette()
+    "GRAIN" -> ArtworkFilter.Grain()
+    else -> ArtworkFilter.Grayscale()
+}
+
+private fun <T> List<T>.swap(first: Int, second: Int): List<T> = toMutableList().apply {
+    val item = this[first]
+    this[first] = this[second]
+    this[second] = item
+}
+
+private val WALLPAPER_ELEMENT_LABELS = listOf("ARTWORK", "TITLE", "ARTIST", "ALBUM", "CLOCK", "PROGRESS")
+private val WALLPAPER_FILTER_LABELS = listOf("GRAYSCALE", "BLUR", "DUOTONE", "BRIGHTNESS / CONTRAST", "VIGNETTE", "GRAIN")
+private val NORMALIZED_STEPS = (0..100 step 10).toList()
+private val SIZE_STEPS = listOf(1, 10, 25, 50, 75, 100)
+private val HEIGHT_STEPS = listOf(1, 5, 10, 25, 50, 75, 100)
+private val FILTER_STEPS = listOf(0, 5, 10, 15, 20, 25)
+private val SIGNED_STEPS = listOf(-100, -50, -25, 0, 25, 50, 100)
+private val CONTRAST_STEPS = listOf(25, 50, 75, 100, 125, 150, 200)
+
+@Composable
+private fun SyncSettings(
+    onExport: () -> Unit,
+    onImport: () -> Unit,
+    conflicts: List<SyncConflictNotice>,
+    onDismissConflict: (String) -> Unit,
+    onUseReceived: (String) -> Unit,
+    lanSync: LanSyncUiState,
+    pairedDevices: List<PairedDeviceUi>,
+    onStartLanSyncHost: () -> Unit,
+    onJoinLanSync: (String) -> Unit,
+    onConfirmLanSync: (Boolean) -> Unit,
+    onCancelLanSync: () -> Unit,
+    onUnpairDevice: (String) -> Unit,
+    onSelectMusicTransfer: () -> Unit,
+    onImportMusicTransfer: () -> Unit,
+    onPrepareLanMusicTransfer: () -> Unit,
+    playTogether: PlayTogetherUiState,
+    onStartPlayTogetherHost: () -> Unit,
+    onJoinPlayTogether: (String) -> Unit,
+    onConfirmPlayTogether: (Boolean) -> Unit,
+    onLeavePlayTogether: () -> Unit,
+    onResyncPlayTogether: () -> Unit,
+) {
+    var address by remember { mutableStateOf("") }
+    var playTogetherAddress by remember { mutableStateOf("") }
+    Column {
+        BasicText("WIRED DATA SYNC", style = RelayType.Track, modifier = Modifier.padding(bottom = 8.dp))
+        BasicText(
+            "Transfer a .relaysync file with USB, removable storage, or a mounted folder. It merges library data; music files and credentials stay on this device.",
+            style = RelayType.Metadata,
+        )
+        TransportAction("EXPORT SYNC FILE", "Create a data-only sync bundle", true, onExport, Modifier.fillMaxWidth().padding(top = 16.dp))
+        TransportAction("IMPORT SYNC FILE", "Merge a data-only sync bundle", true, onImport, Modifier.fillMaxWidth().padding(top = 8.dp))
+        BasicText("LAN DATA SYNC", style = RelayType.Track, modifier = Modifier.padding(top = 24.dp, bottom = 8.dp))
+        BasicText(
+            "Both devices must confirm the same six-digit code. This transfers only Relay data; music and playback stay separate.",
+            style = RelayType.Metadata,
+        )
+        lanSync.hostAddress?.let { BasicText("HOST AT $it", style = RelayType.Utility.copy(color = RelayColors.Signal), modifier = Modifier.padding(top = 8.dp)) }
+        lanSync.message?.let { BasicText(it, style = RelayType.Metadata, modifier = Modifier.padding(top = 8.dp)) }
+        lanSync.warning?.let { BasicText("NOTE · $it", style = RelayType.Metadata, modifier = Modifier.padding(top = 4.dp)) }
+        if (!lanSync.active && !lanSync.awaitingConfirmation) {
+            TransportAction("HOST LAN SYNC", "Host one encrypted local-network data sync session", true, onStartLanSyncHost, Modifier.fillMaxWidth().padding(top = 8.dp))
+            BasicTextField(
+                value = address,
+                onValueChange = { address = it.take(128) },
+                singleLine = true,
+                textStyle = RelayType.Metadata.copy(color = RelayColors.Paper),
+                modifier = Modifier.fillMaxWidth().padding(top = 8.dp).border(1.dp, RelayColors.Line).padding(12.dp)
+                    .semantics { contentDescription = "LAN sync host address and port" },
+            )
+            TransportAction("JOIN LAN SYNC", "Join an encrypted LAN sync host", address.isNotBlank(), { onJoinLanSync(address) }, Modifier.fillMaxWidth().padding(top = 8.dp))
+        }
+        if (lanSync.awaitingConfirmation) {
+            BasicText("VERIFY CODE · ${lanSync.pairingCode}", style = RelayType.Title, modifier = Modifier.padding(top = 12.dp))
+            BasicText("Peer ${lanSync.peerFingerprint}. Confirm only if both devices show this code.", style = RelayType.Metadata, modifier = Modifier.padding(top = 4.dp))
+            Row(modifier = Modifier.fillMaxWidth().padding(top = 8.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                TransportAction("CONFIRM", "Confirm this LAN sync pairing code", true, { onConfirmLanSync(true) }, Modifier.weight(1f))
+                TransportAction("CANCEL", "Cancel LAN sync pairing", true, { onConfirmLanSync(false) }, Modifier.weight(1f))
+            }
+        }
+        if (lanSync.active && !lanSync.awaitingConfirmation) {
+            TransportAction("CANCEL LAN SYNC", "Stop this local-network sync session", true, onCancelLanSync, Modifier.fillMaxWidth().padding(top = 8.dp))
+        }
+        if (pairedDevices.isNotEmpty()) {
+            BasicText("PAIRED DEVICES", style = RelayType.Track, modifier = Modifier.padding(top = 16.dp, bottom = 8.dp))
+            pairedDevices.forEach { device ->
+                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    BasicText(device.name, style = RelayType.Metadata, modifier = Modifier.weight(1f).padding(top = 12.dp))
+                    TransportAction("UNPAIR", "Remove ${device.name} from trusted Relay devices", true, { onUnpairDevice(device.id) }, Modifier.weight(1f))
+                }
+            }
+        }
+        BasicText("SELECTED MUSIC TRANSFER", style = RelayType.Track, modifier = Modifier.padding(top = 24.dp, bottom = 8.dp))
+        BasicText("Choose local music files to export. Imports verify each file before indexing it in Relay/music.", style = RelayType.Metadata)
+        lanSync.preparedMusicBytes?.let { bytes ->
+            BasicText("READY FOR LAN · ${bytes / (1024 * 1024)} MB", style = RelayType.Utility, modifier = Modifier.padding(top = 4.dp))
+        }
+        TransportAction("EXPORT SELECTED MUSIC", "Choose local music files and create a verified transfer archive", true, onSelectMusicTransfer, Modifier.fillMaxWidth().padding(top = 8.dp))
+        TransportAction("IMPORT MUSIC ARCHIVE", "Import a verified selected-music transfer archive", true, onImportMusicTransfer, Modifier.fillMaxWidth().padding(top = 8.dp))
+        TransportAction("PREPARE MUSIC FOR LAN", "Choose music to include in the next encrypted LAN sync", true, onPrepareLanMusicTransfer, Modifier.fillMaxWidth().padding(top = 8.dp))
+        BasicText("PLAY TOGETHER", style = RelayType.Track, modifier = Modifier.padding(top = 24.dp, bottom = 8.dp))
+        BasicText("Start the current track on a paired device. Each device plays its own matching local file; Relay never sends audio or stream links.", style = RelayType.Metadata)
+        playTogether.hostAddress?.let { BasicText("HOST AT $it", style = RelayType.Utility.copy(color = RelayColors.Signal), modifier = Modifier.padding(top = 8.dp)) }
+        playTogether.message?.let { BasicText(it, style = RelayType.Metadata, modifier = Modifier.padding(top = 8.dp)) }
+        playTogether.driftMs?.let { BasicText("LAST DRIFT ${it}MS", style = RelayType.Utility, modifier = Modifier.padding(top = 4.dp)) }
+        if (!playTogether.active && !playTogether.awaitingConfirmation) {
+            TransportAction("HOST PLAY TOGETHER", "Host one foreground synchronized-playback session", true, onStartPlayTogetherHost, Modifier.fillMaxWidth().padding(top = 8.dp))
+            BasicTextField(
+                value = playTogetherAddress,
+                onValueChange = { playTogetherAddress = it.take(128) },
+                singleLine = true,
+                textStyle = RelayType.Metadata.copy(color = RelayColors.Paper),
+                modifier = Modifier.fillMaxWidth().padding(top = 8.dp).border(1.dp, RelayColors.Line).padding(12.dp)
+                    .semantics { contentDescription = "Play Together host address and port" },
+            )
+            TransportAction("JOIN PLAY TOGETHER", "Join a foreground synchronized-playback host", playTogetherAddress.isNotBlank(), { onJoinPlayTogether(playTogetherAddress) }, Modifier.fillMaxWidth().padding(top = 8.dp))
+        }
+        if (playTogether.awaitingConfirmation) {
+            BasicText("VERIFY CODE · ${playTogether.pairingCode}", style = RelayType.Title, modifier = Modifier.padding(top = 12.dp))
+            BasicText("Peer ${playTogether.peerFingerprint}. Confirm only if both devices show this code.", style = RelayType.Metadata, modifier = Modifier.padding(top = 4.dp))
+            Row(modifier = Modifier.fillMaxWidth().padding(top = 8.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                TransportAction("CONFIRM", "Confirm this Play Together pairing code", true, { onConfirmPlayTogether(true) }, Modifier.weight(1f))
+                TransportAction("CANCEL", "Cancel Play Together pairing", true, { onConfirmPlayTogether(false) }, Modifier.weight(1f))
+            }
+        }
+        if (playTogether.active) {
+            if (playTogether.resyncRequired) {
+                TransportAction("RESYNC", "Seek to the leader's current position", true, onResyncPlayTogether, Modifier.fillMaxWidth().padding(top = 8.dp))
+            }
+            TransportAction("LEAVE PLAY TOGETHER", "Stop this synchronized-playback session", true, onLeavePlayTogether, Modifier.fillMaxWidth().padding(top = 8.dp))
+        }
+        if (conflicts.isNotEmpty()) {
+            BasicText("CONFLICTS", style = RelayType.Track, modifier = Modifier.padding(top = 24.dp, bottom = 8.dp))
+            BasicText("Local values were preserved. Choose which version to keep for each item.", style = RelayType.Metadata)
+            conflicts.forEach { conflict ->
+                SettingsChoice(conflict.description, "KEEP LOCAL", "Dismiss sync conflict ${conflict.description}") {
+                    onDismissConflict(conflict.id)
+                }
+                if (conflict.canUseReceived) {
+                    TransportAction(
+                        "USE RECEIVED VALUE",
+                        "Replace local value for ${conflict.description}",
+                        true,
+                        { onUseReceived(conflict.id) },
+                        Modifier.fillMaxWidth().padding(top = 4.dp, bottom = 8.dp),
+                    )
+                }
+            }
+        }
+    }
+}
+
+private enum class PlaybackPicker { SPEED, FADE_IN, FADE_OUT, CROSSFADE, SHUFFLE_PROFILE }
 private enum class AudioPicker { PRESET, BASS_BOOST }
 
 private val PLAYBACK_SPEEDS = listOf(0.75f, 0.9f, 1f, 1.1f, 1.25f, 1.5f, 2f)
@@ -978,7 +1500,7 @@ internal fun ThemePackSettings(
                 }
                 pack.presentation.effects.takeIf { it.isNotEmpty() }?.let { effects ->
                     BasicText(
-                        "EFFECTS " + effects.joinToString(" · ") { "${it.kind.name} ${it.strength}" } + " — rendered in a later phase",
+                        "EFFECTS " + effects.joinToString(" · ") { "${it.kind.name} ${it.strength}" },
                         style = RelayType.Utility.copy(color = RelayColors.Muted),
                         modifier = Modifier.padding(top = 8.dp),
                     )

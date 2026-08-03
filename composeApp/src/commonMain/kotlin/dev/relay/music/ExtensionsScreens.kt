@@ -59,8 +59,8 @@ import dev.relay.music.update.ComponentIdentity
 import dev.relay.music.update.ComponentUpdate
 import dev.relay.music.update.ComponentUpdateStatus
 import dev.relay.music.update.InstalledComponent
-import dev.relay.music.update.UpdatableComponentKind
 import dev.relay.music.update.findComponentUpdates
+import dev.relay.music.update.toUpdatableComponentKind
 import dev.relay.music.ui.RelayColors
 import dev.relay.music.ui.RelayType
 import kotlinx.coroutines.delay
@@ -75,12 +75,12 @@ internal data class CatalogExtension(
 )
 
 private fun InstalledExtension.asInstalledComponent() = InstalledComponent(
-    identity = ComponentIdentity(UpdatableComponentKind.EXTENSION, repositoryId, extensionId),
+    identity = ComponentIdentity(kind.toUpdatableComponentKind(), repositoryId, extensionId),
     version = version,
 )
 
 private fun CatalogExtension.asAvailableComponent() = AvailableComponent(
-    identity = ComponentIdentity(UpdatableComponentKind.EXTENSION, repository.id, entry.id),
+    identity = ComponentIdentity(entry.kind.toUpdatableComponentKind(), repository.id, entry.id),
     version = entry.version,
     isCompatible = entry.isCompatible,
     payload = this,
@@ -96,14 +96,16 @@ internal fun ExtensionsScreen(
     onRemoveTrustedRepository: (String) -> Unit,
     onRefreshRepository: (RepositoryDescriptor) -> Unit,
     onInstallExtension: (RepositoryDescriptor, ExtensionCatalogEntry) -> Unit,
-    onSetExtensionEnabled: (RepositoryDescriptor, ExtensionCatalogEntry, Boolean) -> Unit,
+    onSetExtensionEnabled: (InstalledExtension, Boolean) -> Unit,
     onUninstallExtension: (InstalledExtension) -> Unit,
     importedRepository: RepositoryDescriptor?,
     repositoryImportMessage: String?,
     repositoryImportVersion: Long,
     submenu: ExtensionsSubmenu?,
+    selectedTab: ExtensionsTab,
     selectedExtension: CatalogExtension?,
     onSubmenuChange: (ExtensionsSubmenu?) -> Unit,
+    onTabChange: (ExtensionsTab) -> Unit,
     onExtensionSelected: (CatalogExtension) -> Unit,
     extensionSourceResults: List<ExtensionSourceResults>,
     extensionSourceMessage: String?,
@@ -124,6 +126,7 @@ internal fun ExtensionsScreen(
     onEnqueue: (Track) -> Unit,
     browsedExtensionId: String?,
     onBrowseExtension: (String) -> Unit,
+    onOpenSupportUrl: (String) -> Unit,
 ) {
     when (submenu) {
         ExtensionsSubmenu.REPOSITORIES -> RepositorySettings(
@@ -164,6 +167,7 @@ internal fun ExtensionsScreen(
                 onSetExtensionEnabled = onSetExtensionEnabled,
                 onUninstallExtension = onUninstallExtension,
                 onBrowseExtension = onBrowseExtension,
+                onOpenSupportUrl = onOpenSupportUrl,
                 settingSchema = sourceSettingSchemas[extension.entry.id],
                 settingValues = settings.sourceSettings[extension.entry.id].orEmpty(),
                 onLoadSourceSettings = onLoadSourceSettings,
@@ -173,6 +177,8 @@ internal fun ExtensionsScreen(
         null -> ExtensionCatalogScreen(
             settings = settings,
             repositoryCatalogs = repositoryCatalogs,
+            selectedTab = selectedTab,
+            onTabChange = onTabChange,
             onOpenRepositories = { onSubmenuChange(ExtensionsSubmenu.REPOSITORIES) },
             onOpenSourceSearch = { onSubmenuChange(ExtensionsSubmenu.SOURCE_SEARCH) },
             onExtensionSelected = onExtensionSelected,
@@ -180,6 +186,7 @@ internal fun ExtensionsScreen(
             onRefreshAll = onRefreshExtensions,
             onUninstallExtension = onUninstallExtension,
             onInstallExtension = onInstallExtension,
+            onSetExtensionEnabled = onSetExtensionEnabled,
             extensionDownload = extensionDownload,
             onBrowseExtension = onBrowseExtension,
         )
@@ -190,6 +197,8 @@ internal fun ExtensionsScreen(
 internal fun ExtensionCatalogScreen(
     settings: RelaySettings,
     repositoryCatalogs: Map<String, List<ExtensionCatalogEntry>>,
+    selectedTab: ExtensionsTab,
+    onTabChange: (ExtensionsTab) -> Unit,
     onOpenRepositories: () -> Unit,
     onOpenSourceSearch: () -> Unit,
     onExtensionSelected: (CatalogExtension) -> Unit,
@@ -197,10 +206,10 @@ internal fun ExtensionCatalogScreen(
     onRefreshAll: () -> Unit,
     onUninstallExtension: (InstalledExtension) -> Unit,
     onInstallExtension: (RepositoryDescriptor, ExtensionCatalogEntry) -> Unit,
+    onSetExtensionEnabled: (InstalledExtension, Boolean) -> Unit,
     extensionDownload: ExtensionDownloadProgress?,
     onBrowseExtension: (String) -> Unit,
 ) {
-    var selectedTab by remember { mutableStateOf(ExtensionsTab.SOURCES) }
     var extensionQuery by remember { mutableStateOf("") }
     val scrollState = rememberScrollState()
     var pullDistance by remember { mutableFloatStateOf(0f) }
@@ -252,7 +261,7 @@ internal fun ExtensionCatalogScreen(
                         .heightIn(min = 48.dp)
                         .border(1.dp, RelayColors.Line)
                         .semantics { contentDescription = "Show ${tab.name.lowercase()} extensions" }
-                        .clickable(role = Role.Tab, onClick = { selectedTab = tab })
+                        .clickable(role = Role.Tab, onClick = { onTabChange(tab) })
                         .padding(horizontal = 8.dp, vertical = 16.dp),
                 )
             }
@@ -301,7 +310,7 @@ internal fun ExtensionCatalogScreen(
                     )
                 } else {
                     sources.forEach { installed ->
-                        val name = catalogExtensions.firstOrNull {
+                        val name = installed.catalogSnapshot?.name ?: catalogExtensions.firstOrNull {
                             it.repository.id == installed.repositoryId && it.entry.id == installed.extensionId
                         }?.entry?.name ?: installed.extensionId
                         Column(
@@ -335,7 +344,8 @@ internal fun ExtensionCatalogScreen(
                         InstalledExtensionRow(
                             installed = installed,
                             catalogExtension = catalogExtensions.firstOrNull {
-                                it.repository.id == installed.repositoryId && it.entry.id == installed.extensionId
+                                it.repository.id == installed.repositoryId && it.entry.id == installed.extensionId &&
+                                    it.entry.version == installed.version
                             },
                             componentUpdate = componentUpdates.firstOrNull {
                                 it.installed.identity == installed.asInstalledComponent().identity
@@ -344,6 +354,7 @@ internal fun ExtensionCatalogScreen(
                             download = extensionDownload?.takeIf { it.extensionId == installed.extensionId },
                             onOpen = onExtensionSelected,
                             onUpdate = { extension -> onInstallExtension(extension.repository, extension.entry) },
+                            onSetEnabled = onSetExtensionEnabled,
                             onUninstall = onUninstallExtension,
                         )
                     }
@@ -452,9 +463,11 @@ private fun InstalledExtensionRow(
     download: ExtensionDownloadProgress?,
     onOpen: (CatalogExtension) -> Unit,
     onUpdate: (CatalogExtension) -> Unit,
+    onSetEnabled: (InstalledExtension, Boolean) -> Unit,
     onUninstall: (InstalledExtension) -> Unit,
 ) {
     val update = componentUpdate?.takeIf { it.isActionable }?.candidate?.payload
+    val isThemePack = installed.kind == ExtensionKind.THEME_PACK
     Column(
         modifier = Modifier
             .fillMaxWidth()
@@ -467,18 +480,18 @@ private fun InstalledExtensionRow(
             )
             .padding(12.dp),
     ) {
-        BasicText(catalogExtension?.entry?.name ?: installed.extensionId, style = RelayType.Track)
+        BasicText(installed.catalogSnapshot?.name ?: catalogExtension?.entry?.name ?: installed.extensionId, style = RelayType.Track)
         BasicText(
             listOfNotNull(
                 installed.version,
-                if (installed.enabled) "ENABLED" else "DISABLED",
+                if (isThemePack) "INSTALLED" else if (installed.enabled) "ENABLED" else "DISABLED",
                 "ORPHANED".takeIf { orphaned },
                 componentUpdate?.candidate?.version?.let { "${componentUpdate.status.displayName()} $it" },
             ).joinToString(" · "),
             style = RelayType.Metadata,
             modifier = Modifier.padding(top = 4.dp),
         )
-        installed.disabledReason?.let { reason ->
+        installed.disabledReason?.takeUnless { isThemePack }?.let { reason ->
             BasicText(reason, style = RelayType.Metadata, modifier = Modifier.padding(top = 4.dp))
         }
         if (orphaned) {
@@ -487,14 +500,21 @@ private fun InstalledExtensionRow(
                 style = RelayType.Metadata,
                 modifier = Modifier.padding(top = 4.dp),
             )
-            TransportAction(
-                label = "UNINSTALL",
-                description = "Uninstall orphaned extension ${installed.extensionId}",
-                enabled = installed.androidPackageName != null,
-                onClick = { onUninstall(installed) },
-                modifier = Modifier.fillMaxWidth().padding(top = 8.dp),
-            )
         }
+        if (!isThemePack) TransportAction(
+            label = if (installed.enabled) "DISABLE" else "ENABLE",
+            description = "${if (installed.enabled) "Disable" else "Enable"} ${installed.catalogSnapshot?.name ?: installed.extensionId}",
+            enabled = download == null,
+            onClick = { onSetEnabled(installed, !installed.enabled) },
+            modifier = Modifier.fillMaxWidth().padding(top = 8.dp),
+        )
+        if (orphaned || isThemePack) TransportAction(
+            label = if (isThemePack) "REMOVE" else "UNINSTALL",
+            description = if (isThemePack) "Remove theme pack ${installed.extensionId}" else "Uninstall orphaned extension ${installed.extensionId}",
+            enabled = download == null && (isThemePack || installed.androidPackageName != null),
+            onClick = { onUninstall(installed) },
+            modifier = Modifier.fillMaxWidth().padding(top = 8.dp),
+        )
         when {
             download != null -> ExtensionDownloadBar(download)
             update != null -> TransportAction(
@@ -522,9 +542,10 @@ private fun ExtensionDetailsScreen(
     installed: InstalledExtension?,
     download: ExtensionDownloadProgress?,
     onInstallExtension: (RepositoryDescriptor, ExtensionCatalogEntry) -> Unit,
-    onSetExtensionEnabled: (RepositoryDescriptor, ExtensionCatalogEntry, Boolean) -> Unit,
+    onSetExtensionEnabled: (InstalledExtension, Boolean) -> Unit,
     onUninstallExtension: (InstalledExtension) -> Unit,
     onBrowseExtension: (String) -> Unit,
+    onOpenSupportUrl: (String) -> Unit,
     settingSchema: List<SourceSettingDefinition>?,
     settingValues: Map<String, String>,
     onLoadSourceSettings: (String) -> Unit,
@@ -549,9 +570,19 @@ private fun ExtensionDetailsScreen(
         extension.entry.androidPackageName?.let { ExtensionDetail("ANDROID PACKAGE", it) }
         extension.entry.androidSigningCertificateSha256?.let { ExtensionDetail("APK SIGNER", it) }
         ExtensionDetail("ARTIFACT", extension.entry.artifactUrl)
+        extension.entry.supportUrl?.let { supportUrl ->
+            TransportAction(
+                label = "SUPPORT",
+                description = "Open the support page for ${extension.entry.name}",
+                enabled = true,
+                onClick = { onOpenSupportUrl(supportUrl) },
+                modifier = Modifier.fillMaxWidth().padding(top = 16.dp),
+            )
+        }
         installed?.let {
-            ExtensionDetail("STATUS", if (it.enabled) "INSTALLED" else "DISABLED — ${it.disabledReason}")
-            if (it.enabled && it.kind == dev.relay.music.extension.ExtensionKind.SOURCE && it.version == extension.entry.version) {
+            val isThemePack = it.kind == ExtensionKind.THEME_PACK
+            ExtensionDetail("STATUS", if (isThemePack || it.enabled) "INSTALLED" else "DISABLED — ${it.disabledReason}")
+            if (it.enabled && it.kind == dev.relay.music.extension.ExtensionKind.SOURCE) {
                 TransportAction(
                     label = "BROWSE MUSIC",
                     description = "Browse music from ${extension.entry.name}",
@@ -560,23 +591,21 @@ private fun ExtensionDetailsScreen(
                     modifier = Modifier.fillMaxWidth().padding(top = 16.dp),
                 )
             }
-            if (it.version == extension.entry.version) {
-                TransportAction(
-                    label = if (it.enabled) "DISABLE" else "ENABLE",
-                    description = if (it.enabled) "Disable ${extension.entry.name}" else "Enable ${extension.entry.name} after verification",
-                    enabled = download == null,
-                    onClick = { onSetExtensionEnabled(extension.repository, extension.entry, !it.enabled) },
-                    modifier = Modifier.fillMaxWidth().padding(top = 16.dp),
-                )
-            }
+            if (!isThemePack) TransportAction(
+                label = if (it.enabled) "DISABLE" else "ENABLE",
+                description = if (it.enabled) "Disable ${extension.entry.name}" else "Enable ${extension.entry.name} after verification",
+                enabled = download == null,
+                onClick = { onSetExtensionEnabled(it, !it.enabled) },
+                modifier = Modifier.fillMaxWidth().padding(top = 16.dp),
+            )
             TransportAction(
-                label = "UNINSTALL",
-                description = "Uninstall ${extension.entry.name} with Android confirmation",
-                enabled = download == null && it.androidPackageName != null,
+                label = if (isThemePack) "REMOVE" else "UNINSTALL",
+                description = if (isThemePack) "Remove ${extension.entry.name} from Relay" else "Uninstall ${extension.entry.name} with Android confirmation",
+                enabled = download == null && (isThemePack || it.androidPackageName != null),
                 onClick = { onUninstallExtension(it) },
                 modifier = Modifier.fillMaxWidth().padding(top = 8.dp),
             )
-            if (it.enabled && it.kind == ExtensionKind.SOURCE && it.version == extension.entry.version) {
+            if (it.enabled && it.kind == ExtensionKind.SOURCE) {
                 SourceSettingsSection(
                     extensionId = extension.entry.id,
                     schema = settingSchema,
@@ -592,6 +621,22 @@ private fun ExtensionDetailsScreen(
                     "this Relay supports $EXTENSION_API_VERSION.",
                 style = RelayType.Metadata,
                 modifier = Modifier.padding(top = 16.dp),
+            )
+        } else if (extension.entry.kind == ExtensionKind.THEME_PACK) {
+            download?.let { progress -> ExtensionDownloadBar(progress) }
+            val installedCurrent = installed?.version == extension.entry.version
+            val actionLabel = when {
+                download != null -> "DOWNLOADING"
+                installedCurrent -> "INSTALLED"
+                installed != null -> "UPDATE THEME"
+                else -> "INSTALL THEME"
+            }
+            TransportAction(
+                actionLabel,
+                "Download, verify, and apply the data-only theme pack ${extension.entry.name}",
+                download == null && !installedCurrent,
+                { onInstallExtension(extension.repository, extension.entry) },
+                Modifier.fillMaxWidth().padding(top = 16.dp),
             )
         } else if (extension.entry.androidPackageName != null) {
             download?.let { progress -> ExtensionDownloadBar(progress) }

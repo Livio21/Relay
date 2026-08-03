@@ -7,8 +7,8 @@ import kotlinx.coroutines.flow.first
 /**
  * Turns a `relay-extension://` placeholder into a live stream URL plus the source's media
  * headers, immediately before playback. The playback service owns no activity state, so this
- * reads installed extensions from the database and their entries from the verified catalog
- * cache. Resolved URLs are short-lived and never persisted.
+ * reads installed extensions from the database and reuses the catalog row verified at install.
+ * Resolved URLs are short-lived and never persisted.
  */
 object ExtensionStreamResolver {
     class Resolved(val url: String, val headers: Map<String, String>)
@@ -29,12 +29,14 @@ object ExtensionStreamResolver {
         val installed = settings.installedExtensions.firstOrNull {
             it.extensionId == ref.extensionId && it.enabled && it.kind == ExtensionKind.SOURCE
         } ?: error("Install and enable the ${ref.extensionId} extension to play this track.")
-        val repository = settings.trustedRepositories.firstOrNull { it.id == installed.repositoryId }
-            ?: error("The repository for ${ref.extensionId} is no longer trusted.")
-        val entry = RepositoryCatalogClient(context).cachedCatalog(repository)
-            ?.extensions
-            ?.firstOrNull { it.id == installed.extensionId && it.version == installed.version }
-            ?: error("Refresh the ${repository.name} repository to play this track.")
+        val legacyCatalog = if (installed.catalogSnapshot == null) {
+            settings.trustedRepositories.firstOrNull { it.id == installed.repositoryId }
+                ?.let { RepositoryCatalogClient(context).cachedCatalog(it) }
+        } else {
+            null
+        }
+        val entry = installed.resolvedCatalogEntry(legacyCatalog?.extensions.orEmpty())
+            ?: error("Trusted install details for ${ref.extensionId} are unavailable. Refresh its repository or reinstall the extension.")
 
         val loader = AndroidExtensionLoader(context)
         val source = loader.load(entry).getOrThrow()

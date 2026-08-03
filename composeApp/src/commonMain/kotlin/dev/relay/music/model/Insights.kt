@@ -1,5 +1,7 @@
 package dev.relay.music.model
 
+import kotlin.math.abs
+
 /** Time window an insights view covers. `days == null` means every recorded play. */
 enum class InsightsRange(val days: Int?) {
     WEEK(7),
@@ -7,6 +9,34 @@ enum class InsightsRange(val days: Int?) {
     YEAR(365),
     ALL(null),
 }
+
+enum class AlbumChartMetric { PLAYS }
+
+/** A saved, reproducible chart request. Generated images are deliberately not canonical data. */
+data class AlbumChartSpec(
+    val id: String,
+    val range: InsightsRange,
+    val metric: AlbumChartMetric = AlbumChartMetric.PLAYS,
+    val limit: Int = 9,
+    val createdAtEpochMs: Long,
+)
+
+fun AlbumChartSpec.validate(): String? = when {
+    !id.matches(Regex("[a-zA-Z0-9_-]{1,64}")) -> "Chart ID is invalid."
+    limit !in 1..16 -> "Chart size is invalid."
+    createdAtEpochMs < 0 -> "Chart creation time is invalid."
+    else -> null
+}
+
+/** Provenance stays local: imported or manual events are never candidates for re-scrobbling. */
+enum class ListeningOrigin { LOCAL, LASTFM_IMPORT, MANUAL }
+
+/** One profile exists per installation; a tracker association is only a non-secret username. */
+data class LocalProfile(
+    val displayName: String,
+    val createdAtEpochMs: Long,
+    val lastFmUsername: String? = null,
+)
 
 /**
  * One recorded play. The snapshot fields let a remote track still be attributed after its
@@ -20,7 +50,42 @@ data class ListeningEvent(
     val artist: String? = null,
     val album: String? = null,
     val durationMs: Long? = null,
+    val origin: ListeningOrigin = ListeningOrigin.LOCAL,
+    /** Reviewed title/artist/album fingerprint when no stable source track ID exists. */
+    val identityFingerprint: String? = null,
 )
+
+const val LISTENING_EVENT_DEDUP_WINDOW_MS = 60_000L
+
+/**
+ * Keeps only import candidates that are not already represented by the same effective recording
+ * around the same timestamp. The returned events preserve their original provenance.
+ */
+fun newListeningEventsForImport(
+    existing: List<ListeningEvent>,
+    candidates: List<ListeningEvent>,
+    timestampWindowMs: Long = LISTENING_EVENT_DEDUP_WINDOW_MS,
+): List<ListeningEvent> {
+    require(timestampWindowMs >= 0) { "Timestamp window cannot be negative." }
+    val accepted = existing.toMutableList()
+    return candidates.filter { candidate ->
+        accepted.none { recorded -> recorded.matchesForDeduplication(candidate, timestampWindowMs) }
+            .also { if (it) accepted += candidate }
+    }
+}
+
+fun ListeningEvent.effectiveFingerprint(): String {
+    identityFingerprint?.normalized()?.takeIf(String::isNotEmpty)?.let { return it }
+    val metadata = listOf(title, artist, album).mapNotNull { it.normalized().takeIf(String::isNotEmpty) }
+    return metadata.takeIf { it.isNotEmpty() }?.joinToString("\u0000")
+        ?: "${sourceId.normalized()}\u0000${trackId.normalized()}"
+}
+
+private fun ListeningEvent.matchesForDeduplication(other: ListeningEvent, windowMs: Long): Boolean =
+    effectiveFingerprint() == other.effectiveFingerprint() && abs(playedAtEpochMs - other.playedAtEpochMs) <= windowMs
+
+private fun String?.normalized(): String =
+    this.orEmpty().trim().lowercase().replace(Regex("\\s+"), " ")
 
 data class InsightEntry(
     val label: String,
@@ -81,6 +146,9 @@ fun insightsFor(
             .sortedBy { it.epochDay },
     )
 }
+
+fun albumChartEntries(events: List<ListeningEvent>, spec: AlbumChartSpec, nowEpochMs: Long): List<InsightEntry> =
+    insightsFor(events, spec.range, nowEpochMs, spec.limit).topAlbums
 
 private fun ListeningEvent.trackLabel(): String {
     val trackTitle = title?.trim()?.takeIf(String::isNotEmpty) ?: UNKNOWN_INSIGHT_LABEL

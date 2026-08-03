@@ -1,7 +1,14 @@
 package dev.relay.music.update
 
+import dev.relay.music.extension.ExtensionKind
+
 /** Namespaces prevent a source, theme, or app release with the same ID from colliding. */
 enum class UpdatableComponentKind { APPLICATION, EXTENSION, THEME_PACK, WALLPAPER_PRESET }
+
+fun ExtensionKind.toUpdatableComponentKind(): UpdatableComponentKind = when (this) {
+    ExtensionKind.SOURCE -> UpdatableComponentKind.EXTENSION
+    ExtensionKind.THEME_PACK -> UpdatableComponentKind.THEME_PACK
+}
 
 data class ComponentIdentity(
     val kind: UpdatableComponentKind,

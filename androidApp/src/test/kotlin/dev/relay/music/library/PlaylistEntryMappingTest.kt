@@ -18,7 +18,7 @@ class PlaylistEntryMappingTest {
     )
 
     @Test
-    fun entrySnapshotKeepsDisplayMetadataButNeverInsecureArtwork() {
+    fun entrySnapshotKeepsDisplayMetadataButNeverRemoteArtwork() {
         val entry = track.asPlaylistEntry(playlistId = 7, position = 2)
 
         assertEquals(7, entry.playlistId)
@@ -27,8 +27,9 @@ class PlaylistEntryMappingTest {
         assertEquals("Signal Test", entry.title)
         assertEquals("Relay Demo", entry.artist)
         assertEquals(3_000, entry.durationMs)
-        assertEquals("https://example.invalid/art.jpg", entry.artworkUri)
+        assertNull(entry.artworkUri)
         assertNull(track.copy(artworkUri = "http://example.invalid/art.jpg").asPlaylistEntry(7, 0).artworkUri)
+        assertEquals("file:///cache/art.jpg", track.copy(artworkUri = "file:///cache/art.jpg").asPlaylistEntry(7, 0).artworkUri)
     }
 
     @Test
@@ -42,7 +43,7 @@ class PlaylistEntryMappingTest {
         assertEquals("Relay Demo", entry.artist)
         assertEquals("Samples", entry.album)
         assertEquals(3_000, entry.durationMs)
-        assertEquals("https://example.invalid/art.jpg", entry.artworkUri)
+        assertNull(entry.artworkUri)
         assertNull(track.copy(artworkUri = "http://example.invalid/art.jpg").asQueueEntry(0).artworkUri)
         // The resolved stream URL must not survive into storage.
         assertEquals(

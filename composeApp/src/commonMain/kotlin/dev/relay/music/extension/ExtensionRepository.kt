@@ -23,6 +23,8 @@ data class ExtensionCatalogEntry(
     val androidPackageName: String? = null,
     /** SHA-256 of the Android APK signing certificate, lowercase hexadecimal. */
     val androidSigningCertificateSha256: String? = null,
+    /** Optional donation or support page displayed by the Relay host. */
+    val supportUrl: String? = null,
 )
 
 data class RepositoryCatalog(
@@ -42,6 +44,8 @@ data class InstalledExtension(
     val permissions: Set<ExtensionPermission>,
     val androidPackageName: String? = null,
     val androidSigningCertificateSha256: String? = null,
+    /** Signed catalog row verified when this exact version was installed. */
+    val catalogSnapshot: ExtensionCatalogEntry? = null,
 )
 
 /** Validates parsed catalog fields after the platform has verified the signed catalog bytes. */
@@ -62,6 +66,20 @@ fun RepositoryCatalog.validate(descriptor: RepositoryDescriptor): String? = when
     else -> extensions.asSequence().mapNotNull { it.validate() }.firstOrNull()
 }
 
+/** A repository ID and origin keep one signing identity until the user removes that trust. */
+fun repositoryTrustError(existing: Iterable<RepositoryDescriptor>, candidate: RepositoryDescriptor): String? {
+    candidate.validate()?.let { return it }
+    existing.firstOrNull { it.id == candidate.id }?.let { trusted ->
+        return if (trusted.signingPublicKey != candidate.signingPublicKey) {
+            "Repository signing key changed. Remove the trusted repository before adding the new key."
+        } else {
+            "Repository is already trusted."
+        }
+    }
+    if (existing.any { it.indexUrl == candidate.indexUrl }) return "Repository origin is already trusted under another ID."
+    return null
+}
+
 /**
  * Structural validity only. An entry for an older or newer Relay API is still a valid catalog
  * row — check [isCompatible] separately so one incompatible extension never invalidates the
@@ -74,14 +92,22 @@ fun ExtensionCatalogEntry.validate(): String? = when {
     !artifactUrl.isSecureUrl() -> "Extension artifact must use HTTPS."
     !artifactSha256.matches(Regex("[0-9a-f]{64}")) -> "Extension digest is invalid."
     artifactSizeBytes !in 1..(100L * 1024 * 1024) -> "Extension artifact size is invalid."
+    kind == ExtensionKind.THEME_PACK && artifactSizeBytes > THEME_PACK_MAX_BYTES -> "Theme pack artifact is too large."
+    kind == ExtensionKind.THEME_PACK && permissions.isNotEmpty() -> "Theme packs cannot request permissions."
+    kind == ExtensionKind.THEME_PACK && androidPackageName != null -> "Theme packs cannot contain an Android package."
     (androidPackageName == null) != (androidSigningCertificateSha256 == null) -> "Android extension package identity is incomplete."
     androidPackageName != null && !androidPackageName.matches(Regex("[A-Za-z][A-Za-z0-9_]*(\\.[A-Za-z][A-Za-z0-9_]*)+")) -> "Android extension package name is invalid."
     androidSigningCertificateSha256 != null && !androidSigningCertificateSha256.matches(Regex("[0-9a-f]{64}")) -> "Android extension signer is invalid."
+    supportUrl != null && !supportUrl.isSecureExternalUrl() -> "Extension support link is invalid."
     else -> null
 }
 
 val ExtensionCatalogEntry.isCompatible: Boolean
     get() = api.accepts(EXTENSION_API_VERSION)
+
+/** iOS may import bounded data packs, but never a downloaded executable source. */
+val ExtensionCatalogEntry.isSupportedOnIos: Boolean
+    get() = validate() == null && isCompatible && kind == ExtensionKind.THEME_PACK
 
 fun ExtensionCatalogEntry.asInstalled(repositoryId: String, disabledReason: String? = null) = InstalledExtension(
     repositoryId = repositoryId,
@@ -93,6 +119,7 @@ fun ExtensionCatalogEntry.asInstalled(repositoryId: String, disabledReason: Stri
     permissions = permissions,
     androidPackageName = androidPackageName,
     androidSigningCertificateSha256 = androidSigningCertificateSha256,
+    catalogSnapshot = this,
 )
 
 fun InstalledExtension.validate(): String? = when {
@@ -100,19 +127,35 @@ fun InstalledExtension.validate(): String? = when {
     !extensionId.matches(Regex("[a-z0-9][a-z0-9._-]{0,127}")) || version.isBlank() || version.length > 64 -> "Installed extension identity is invalid."
     enabled && disabledReason != null -> "Enabled extension cannot have a disabled reason."
     !enabled && (disabledReason.isNullOrBlank() || disabledReason.length > 240) -> "Disabled extension reason is invalid."
+    kind == ExtensionKind.THEME_PACK && permissions.isNotEmpty() -> "Installed theme packs cannot have permissions."
+    kind == ExtensionKind.THEME_PACK && androidPackageName != null -> "Installed theme packs cannot contain an Android package."
     (androidPackageName == null) != (androidSigningCertificateSha256 == null) -> "Installed Android extension identity is incomplete."
     androidPackageName != null && !androidPackageName.matches(Regex("[A-Za-z][A-Za-z0-9_]*(\\.[A-Za-z][A-Za-z0-9_]*)+")) -> "Installed Android extension package is invalid."
     androidSigningCertificateSha256 != null && !androidSigningCertificateSha256.matches(Regex("[0-9a-f]{64}")) -> "Installed Android extension signer is invalid."
+    catalogSnapshot?.validate() != null -> "Installed extension catalog snapshot is invalid."
+    catalogSnapshot != null && !catalogSnapshot.matches(this) -> "Installed extension catalog snapshot does not match its identity."
     else -> null
 }
+
+/** Uses the immutable install snapshot; an exact signed catalog row only migrates legacy records. */
+fun InstalledExtension.resolvedCatalogEntry(candidates: Iterable<ExtensionCatalogEntry> = emptyList()): ExtensionCatalogEntry? =
+    catalogSnapshot?.takeIf { it.matches(this) } ?: candidates.firstOrNull { it.matches(this) }
+
+private fun ExtensionCatalogEntry.matches(installed: InstalledExtension): Boolean =
+    validate() == null && id == installed.extensionId && version == installed.version && kind == installed.kind &&
+        permissions == installed.permissions && androidPackageName == installed.androidPackageName &&
+        androidSigningCertificateSha256 == installed.androidSigningCertificateSha256
 
 fun InstalledExtension.disabled(reason: String?) = copy(
     enabled = false,
     disabledReason = reason?.trim()?.take(240).takeUnless { it.isNullOrBlank() } ?: "Extension failed to respond.",
 )
 
-private fun String.isSecureUrl(): Boolean {
-    val host = removePrefix("https://").substringBefore('/')
+/** Safe HTTPS URL for catalog-provided pages that Android may open outside Relay. */
+fun String.isSecureExternalUrl(): Boolean {
+    val host = removePrefix("https://").substringBefore('/').substringBefore('?').substringBefore('#')
     return startsWith("https://") && host.isNotBlank() && length <= 2_048 &&
-        none(Char::isWhitespace) && !contains('@') && !contains('#') && !contains('?')
+        none(Char::isWhitespace) && !host.contains('@')
 }
+
+private fun String.isSecureUrl() = isSecureExternalUrl() && !contains('#') && !contains('?')

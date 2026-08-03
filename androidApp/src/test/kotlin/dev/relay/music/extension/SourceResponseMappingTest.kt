@@ -1,8 +1,10 @@
 package dev.relay.music.extension
 
 import dev.relay.music.source.api.RelaySourceTrack
+import dev.relay.music.source.api.RelaySourcePage
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFailsWith
 import kotlin.test.assertNull
 
 class SourceResponseMappingTest {
@@ -64,5 +66,29 @@ class SourceResponseMappingTest {
             ),
             headers,
         )
+    }
+
+    @Test
+    fun sourcePagesRejectMalformedOrDuplicateTracksAsOneBoundary() {
+        val valid = RelaySourceTrack("t1", "https://example.invalid/a.mp3", "Title", "Artist", null, null, null)
+        val malformed = RelaySourceTrack("t2", "http://example.invalid/b.mp3", "Title", "Artist", null, null, null)
+
+        assertFailsWith<IllegalArgumentException> {
+            RelaySourcePage(listOf(valid, malformed)).toResults("example.extension", "demo", "Demo", 1)
+        }
+        assertFailsWith<IllegalArgumentException> {
+            RelaySourcePage(listOf(valid, valid)).toResults("example.extension", "demo", "Demo", 1)
+        }
+    }
+
+    @Test
+    fun sourcePagesEnforceTheHostPageLimit() {
+        val tracks = (0..100).map { index ->
+            RelaySourceTrack("t$index", "https://example.invalid/$index.mp3", "Title $index", "Artist", null, null, null)
+        }
+
+        assertFailsWith<IllegalArgumentException> {
+            RelaySourcePage(tracks).toResults("example.extension", "demo", "Demo", 1)
+        }
     }
 }

@@ -1,5 +1,7 @@
 package dev.relay.music.extension
 
+const val THEME_PACK_MAX_BYTES = 64 * 1024
+
 /** Data-only theme package. It cannot carry Compose code, fonts, scripts, or shaders. */
 data class ThemePack(
     val schemaVersion: Int = 1,

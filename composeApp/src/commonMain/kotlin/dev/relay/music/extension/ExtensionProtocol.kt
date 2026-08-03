@@ -4,7 +4,7 @@ import dev.relay.music.model.Track
 
 const val EXTENSION_API_VERSION = 2
 
-enum class ExtensionKind { SOURCE }
+enum class ExtensionKind { SOURCE, THEME_PACK }
 
 enum class ExtensionPermission { NETWORK, PLAYBACK_EVENTS, METADATA_LOOKUP }
 
@@ -31,10 +31,14 @@ sealed interface ExtensionNegotiation {
 }
 
 fun ExtensionHandshake.negotiate(hostApiVersion: Int = EXTENSION_API_VERSION): ExtensionNegotiation = when {
-    id.isBlank() || id.length > 128 -> ExtensionNegotiation.Refused("Extension ID is invalid.")
+    !id.matches(Regex("[a-z0-9][a-z0-9._-]{0,127}")) -> ExtensionNegotiation.Refused("Extension ID is invalid.")
     version.isBlank() || version.length > 64 -> ExtensionNegotiation.Refused("Extension version is invalid.")
     api.minimum < 1 || api.maximum < api.minimum -> ExtensionNegotiation.Refused("Extension API range is invalid.")
-    settingsSchemaVersion < 1 -> ExtensionNegotiation.Refused("Settings schema version is invalid.")
+    capabilities.size > 32 || capabilities.any { !it.matches(Regex("[a-z0-9][a-z0-9._-]{0,63}")) } ->
+        ExtensionNegotiation.Refused("Extension capabilities are invalid.")
+    settingsSchemaVersion !in 1..10_000 -> ExtensionNegotiation.Refused("Settings schema version is invalid.")
+    authentication.isEmpty() -> ExtensionNegotiation.Refused("Extension authentication declaration is invalid.")
+    kind != ExtensionKind.SOURCE -> ExtensionNegotiation.Refused("Only source extensions can execute.")
     !api.accepts(hostApiVersion) -> ExtensionNegotiation.Refused("Requires extension API ${api.minimum}-${api.maximum}; Relay supports $hostApiVersion.")
     else -> ExtensionNegotiation.Accepted(hostApiVersion)
 }

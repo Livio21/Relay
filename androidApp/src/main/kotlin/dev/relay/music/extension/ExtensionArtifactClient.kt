@@ -5,7 +5,10 @@ import java.io.File
 import java.net.HttpURLConnection
 import java.net.URL
 import java.security.MessageDigest
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.withContext
 
 sealed interface ArtifactDownloadResult {
@@ -21,12 +24,12 @@ class ExtensionArtifactClient(context: Context) {
         entry: ExtensionCatalogEntry,
         onProgress: (downloadedBytes: Long, totalBytes: Long) -> Unit = { _, _ -> },
     ): ArtifactDownloadResult = withContext(Dispatchers.IO) {
-        runCatching {
+        try {
             require(entry.validate() == null) { entry.validate() ?: "Extension artifact is invalid." }
             artifactDirectory.mkdirs()
             require(artifactDirectory.isDirectory) { "Could not prepare extension cache." }
             val artifact = File(artifactDirectory, "${entry.id}-${entry.artifactSha256}.artifact")
-            if (artifact.isFile && artifact.length() == entry.artifactSizeBytes && artifact.sha256() == entry.artifactSha256) {
+            if (artifactValidationError(entry, artifact) == null) {
                 onProgress(entry.artifactSizeBytes, entry.artifactSizeBytes)
                 return@withContext ArtifactDownloadResult.Success(artifact)
             }
@@ -52,6 +55,7 @@ class ExtensionArtifactClient(context: Context) {
                             while (true) {
                                 val count = input.read(buffer)
                                 if (count < 0) break
+                                currentCoroutineContext().ensureActive()
                                 bytesRead += count
                                 require(bytesRead <= entry.artifactSizeBytes) { "Extension artifact is too large." }
                                 digest.update(buffer, 0, count)
@@ -73,7 +77,11 @@ class ExtensionArtifactClient(context: Context) {
             } finally {
                 temporary.delete()
             }
-        }.getOrElse { error -> ArtifactDownloadResult.Failure(error.message ?: "Could not download extension artifact.") }
+        } catch (error: CancellationException) {
+            throw error
+        } catch (error: Throwable) {
+            ArtifactDownloadResult.Failure(error.message ?: "Could not download extension artifact.")
+        }
     }
 }
 
@@ -85,6 +93,7 @@ private fun openHttps(url: String): HttpURLConnection {
             connectTimeout = 10_000
             readTimeout = 30_000
             instanceFollowRedirects = false
+            setRequestProperty("Accept-Encoding", "identity")
         }
         if (connection.responseCode !in 300..399) return connection
         current = checkedRedirectUrl(current, connection.getHeaderField("Location"))
@@ -95,8 +104,18 @@ private fun openHttps(url: String): HttpURLConnection {
 
 internal fun checkedRedirectUrl(current: URL, location: String?): URL {
     val next = URL(current, location?.takeIf { it.isNotBlank() } ?: error("Extension artifact redirect is invalid."))
-    require(next.protocol == "https" && next.host.isNotBlank() && next.userInfo == null) { "Extension artifact redirect must use HTTPS." }
+    require(
+        next.protocol == "https" && next.host.isNotBlank() && next.userInfo == null && next.ref == null &&
+            next.toString().length <= MAX_URL_LENGTH && next.toString().none(Char::isWhitespace),
+    ) { "Extension artifact redirect must use a bounded HTTPS URL." }
     return next
+}
+
+internal fun artifactValidationError(entry: ExtensionCatalogEntry, artifact: File): String? = when {
+    !artifact.isFile -> "Extension artifact is missing."
+    artifact.length() != entry.artifactSizeBytes -> "Extension artifact size does not match its catalog."
+    artifact.sha256() != entry.artifactSha256 -> "Extension artifact digest is invalid."
+    else -> null
 }
 
 private fun File.sha256(): String = inputStream().use { input ->
@@ -115,4 +134,5 @@ internal fun sha256Hex(bytes: ByteArray): String = MessageDigest.getInstance("SH
 private fun ByteArray.hex(): String = joinToString("") { byte -> "%02x".format(byte.toInt() and 0xff) }
 
 private const val MAX_REDIRECTS = 3
+private const val MAX_URL_LENGTH = 8_192
 private const val PROGRESS_STEP_BYTES = 128 * 1024L

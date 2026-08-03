@@ -19,6 +19,7 @@ data class Track(
     val musicBrainzId: String? = null,
     /** Changes when the local file changes; used only to invalidate derived metadata. */
     val sourceRevision: String? = null,
+    val musicBrainzReleaseId: String? = null,
 )
 
 data class TrackFlags(
