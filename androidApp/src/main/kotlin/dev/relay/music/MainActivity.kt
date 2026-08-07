@@ -83,9 +83,11 @@ import dev.relay.music.lyrics.LyricsApi
 import dev.relay.music.library.TrackLyricsEntity
 import dev.relay.music.library.TrackFlagsEntity
 import dev.relay.music.model.MetadataCandidate
+import dev.relay.music.model.OfflineDownloadEvictionEntry
 import dev.relay.music.model.Track
 import dev.relay.music.model.TrackFlags
 import dev.relay.music.model.MetadataOverride
+import dev.relay.music.model.offlineDownloadsToEvict
 import dev.relay.music.extension.RepositoryDescriptor
 import dev.relay.music.extension.ExtensionCatalogEntry
 import dev.relay.music.extension.RepositoryCatalogClient
@@ -672,6 +674,9 @@ class MainActivity : ComponentActivity() {
                     onDownloadRemoteTrack = ::downloadRemoteTrack,
                     onDeleteDownload = ::deleteDownload,
                     onDeleteAllDownloads = ::deleteAllDownloads,
+                    onDownloadLimitChange = ::setDownloadStorageLimit,
+                    onDownloadAutoCleanupChange = ::setDownloadAutoCleanup,
+                    onEvictExceededDownloads = ::evictExceededDownloads,
                     onAudioSettingsChange = ::saveAudioSettings,
                     onShuffleEnabledChange = playerEngine::setShuffleEnabled,
                     onRepeatModeChange = playerEngine::setRepeatMode,
@@ -1423,6 +1428,10 @@ class MainActivity : ComponentActivity() {
                             }
                     }
                     refreshLibrary()
+                    val limitGb = relaySettings.downloadStorageLimitGb
+                    if (relaySettings.downloadAutoCleanup && limitGb > 0) {
+                        enforceDownloadStorageLimit(limitGb)
+                    }
                     Toast.makeText(this@MainActivity, "Saved to Relay/downloads.", Toast.LENGTH_LONG).show()
                 }
                 is RemoteTrackDownloadResult.Failure -> {
@@ -2048,6 +2057,73 @@ class MainActivity : ComponentActivity() {
             }
             refreshLibrary()
             Toast.makeText(this@MainActivity, "Downloads removed.", Toast.LENGTH_SHORT).show()
+        }
+    }
+
+    private fun setDownloadStorageLimit(limitGb: Int) {
+        activityScope.launch(Dispatchers.IO) {
+            settingsStore.save(relaySettings.copy(downloadStorageLimitGb = limitGb))
+            if (relaySettings.downloadAutoCleanup && limitGb > 0) {
+                enforceDownloadStorageLimit(limitGb)
+            }
+        }
+    }
+
+    private fun setDownloadAutoCleanup(enabled: Boolean) {
+        activityScope.launch(Dispatchers.IO) {
+            settingsStore.save(relaySettings.copy(downloadAutoCleanup = enabled))
+            if (enabled && relaySettings.downloadStorageLimitGb > 0) {
+                enforceDownloadStorageLimit(relaySettings.downloadStorageLimitGb)
+            }
+        }
+    }
+
+    private fun evictExceededDownloads() {
+        activityScope.launch {
+            val limitGb = relaySettings.downloadStorageLimitGb
+            if (limitGb <= 0) return@launch
+            enforceDownloadStorageLimit(limitGb)
+        }
+    }
+
+    /**
+     * Deletes oldest downloads (by [OfflineDownloadEntity.downloadedAtEpochMs]) until total
+     * storage is within [limitGb] GB. Called on limit/cleanup-toggle changes and after each
+     * new download when auto-cleanup is enabled.
+     */
+    private suspend fun enforceDownloadStorageLimit(limitGb: Int) {
+        val limitBytes = limitGb * 1024L * 1024L * 1024L
+        withContext(Dispatchers.IO) {
+            val downloads = userLibraryDao.offlineDownloads().first()
+            val byKey = downloads.associateBy { it.sourceId to it.trackId }
+            val toEvict = offlineDownloadsToEvict(
+                downloads.map {
+                    OfflineDownloadEvictionEntry(
+                        sourceId = it.sourceId,
+                        trackId = it.trackId,
+                        sizeBytes = it.sizeBytes,
+                        downloadedAtEpochMs = it.downloadedAtEpochMs,
+                    )
+                },
+                limitBytes,
+            )
+            if (toEvict.isEmpty()) return@withContext
+            for ((sourceId, trackId) in toEvict) {
+                val download = byKey[sourceId to trackId] ?: continue
+                runCatching {
+                    DocumentFile.fromSingleUri(this@MainActivity, download.documentUri.toUri())?.delete()
+                }
+                userLibraryDao.deleteOfflineDownload(sourceId, trackId)
+            }
+            refreshLibrary()
+            withContext(Dispatchers.Main) {
+                val evicted = toEvict.size
+                Toast.makeText(
+                    this@MainActivity,
+                    "Removed $evicted download${if (evicted == 1) "" else "s"} to stay within limit.",
+                    Toast.LENGTH_SHORT,
+                ).show()
+            }
         }
     }
 

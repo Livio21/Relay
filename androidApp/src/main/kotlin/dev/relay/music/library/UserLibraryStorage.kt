@@ -278,6 +278,8 @@ data class RelaySettingsEntity(
     val backupSchedule: String = BackupSchedule.OFF.name,
     val backupRetention: Int = 3,
     val autoBackupExpiryDays: Int = 30,
+    val downloadStorageLimitGb: Int = 0,
+    val downloadAutoCleanup: Boolean = false,
     val trustedRepositoriesJson: String = "[]",
     val installedExtensionsJson: String = "[]",
     val sourceSettingsJson: String = "{}",
@@ -321,6 +323,8 @@ data class RelaySettingsEntity(
         storageRootUri = storageRootUri,
         backupSchedule = BackupSchedule.entries.firstOrNull { it.name == backupSchedule } ?: BackupSchedule.OFF,
         autoBackupExpiryDays = autoBackupExpiryDays.coerceIn(7, 90),
+        downloadStorageLimitGb = downloadStorageLimitGb.coerceIn(0, 100),
+        downloadAutoCleanup = downloadAutoCleanup,
         trustedRepositories = trustedRepositories(),
         installedExtensions = installedExtensions(),
         sourceSettings = sourceSettings(),
@@ -1176,7 +1180,8 @@ private fun RelaySettingsEntity.validateForRestore() {
     require(backupSchedule in BackupSchedule.entries.map(BackupSchedule::name) && backupRetention in 1..100 && autoBackupExpiryDays in 7..90) {
         "Backup schedule is invalid."
     }
-    require(shuffleGrouping in ShuffleGrouping.entries.map(ShuffleGrouping::name)) { "Backup shuffle setting is invalid." }
+    require(downloadStorageLimitGb in 0..100) { "Backup download storage limit is invalid." }
+    require(shuffleGrouping == "NONE" || shuffleGrouping in ShuffleGrouping.entries.map(ShuffleGrouping::name)) { "Backup shuffle setting is invalid." }
     require(activeShuffleProfileId.isNotBlank() && activeShuffleProfileId.length <= 64 && shuffleProfilesJson.length <= MAX_SETTINGS_JSON_CHARS) {
         "Backup shuffle profiles are invalid."
     }
@@ -1255,7 +1260,7 @@ private const val MAX_SETTINGS_JSON_CHARS = 256 * 1024
         OfflineDownloadEntity::class,
         SyncConflictEntity::class,
     ],
-    version = 32,
+    version = 33,
     exportSchema = false,
 )
 abstract class UserLibraryDatabase : RoomDatabase() {
@@ -1271,7 +1276,7 @@ object UserLibraryStore {
             context.applicationContext,
             UserLibraryDatabase::class.java,
             "user_library.db",
-        ).addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10, MIGRATION_10_11, MIGRATION_11_12, MIGRATION_12_13, MIGRATION_13_14, MIGRATION_14_15, MIGRATION_15_16, MIGRATION_16_17, MIGRATION_17_18, MIGRATION_18_19, MIGRATION_19_20, MIGRATION_20_21, MIGRATION_21_22, MIGRATION_22_23, MIGRATION_23_24, MIGRATION_24_25, MIGRATION_25_26, MIGRATION_26_27, MIGRATION_27_28, MIGRATION_28_29, MIGRATION_29_30, MIGRATION_30_31, MIGRATION_31_32).build().also { database = it }
+        ).addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10, MIGRATION_10_11, MIGRATION_11_12, MIGRATION_12_13, MIGRATION_13_14, MIGRATION_14_15, MIGRATION_15_16, MIGRATION_16_17, MIGRATION_17_18, MIGRATION_18_19, MIGRATION_19_20, MIGRATION_20_21, MIGRATION_21_22, MIGRATION_22_23, MIGRATION_23_24, MIGRATION_24_25, MIGRATION_25_26, MIGRATION_26_27, MIGRATION_27_28, MIGRATION_28_29, MIGRATION_29_30, MIGRATION_30_31, MIGRATION_31_32, MIGRATION_32_33).build().also { database = it }
     }
 
     private val MIGRATION_1_2 = object : Migration(1, 2) {
@@ -1517,6 +1522,13 @@ object UserLibraryStore {
             connection.execSQL("ALTER TABLE relay_settings ADD COLUMN showLockscreenMetadata INTEGER NOT NULL DEFAULT 0")
         }
     }
+
+    private val MIGRATION_32_33 = object : Migration(32, 33) {
+        override suspend fun migrate(connection: SQLiteConnection) {
+            connection.execSQL("ALTER TABLE relay_settings ADD COLUMN downloadStorageLimitGb INTEGER NOT NULL DEFAULT 0")
+            connection.execSQL("ALTER TABLE relay_settings ADD COLUMN downloadAutoCleanup INTEGER NOT NULL DEFAULT 0")
+        }
+    }
 }
 
 class RoomSettingsStore(private val dao: UserLibraryDao) : SettingsStore {
@@ -1549,6 +1561,8 @@ class RoomSettingsStore(private val dao: UserLibraryDao) : SettingsStore {
                 storageRootUri = settings.storageRootUri,
                 backupSchedule = settings.backupSchedule.name,
                 autoBackupExpiryDays = settings.autoBackupExpiryDays.coerceIn(7, 90),
+                downloadStorageLimitGb = settings.downloadStorageLimitGb.coerceIn(0, 100),
+                downloadAutoCleanup = settings.downloadAutoCleanup,
                 trustedRepositoriesJson = settings.trustedRepositories.toJson(),
                 installedExtensionsJson = settings.installedExtensions.toInstalledExtensionsJson(),
                 sourceSettingsJson = settings.sourceSettings.toSourceSettingsJson(),

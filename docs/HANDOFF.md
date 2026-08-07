@@ -2,7 +2,7 @@
 
 Read `docs/PROJECT_GUIDE.md` first, then this. This file is the execution brief for the next agent session. Work top-down; each task is independently shippable. Polish functionality first — visual design comes later.
 
-## State as of 2026-07-25
+## State as of 2026-08-03
 
 Everything below is DONE, building, tested, and installed on the test device (CPH2649):
 
@@ -27,8 +27,9 @@ Everything below is DONE, building, tested, and installed on the test device (CP
 - **Landscape is a Cover Flow browser** (`CoverFlowScreens.kt`): rotating the Now Playing page gives full-bleed album covers turning in perspective with mirrored reflections, plus a transport row — no page heading, no docked mini player. Tap a cover to play it. Orientation is derived from `BoxWithConstraints`, so it stays platform-neutral.
 - **The player engine adopts the media session's queue** when the activity is recreated (rotation, process restart while the service lives). Media items carry `relay.sourceId`/`relay.trackId` extras so the queue rebuilds exactly instead of showing an empty player.
 - **Repository import accepts shorthand**: Settings → SOURCE REPOSITORIES takes `owner/repo` or a GitHub page URL and expands it to the raw `repository.json` (branch honoured from `/tree/<branch>`), with a PASTE button for the clipboard and the resolved URL shown before import. Expansion is a pure tested function (`extension/RepositoryShorthand.kt`); insecure or malformed input is rejected rather than upgraded, and the existing descriptor + signing-key review still gates trust.
-- Room DB is at version 30. Migrations also cover local profiles/history provenance, chart specifications, wallpaper choices, and the existing persisted playback state.
+- Room DB is at version 33. Migrations also cover local profiles/history provenance, chart specifications, wallpaper choices, download storage limits, and the existing persisted playback state.
 - **Album-art live wallpaper** (Phase 4A.3) is build-verified: each `WallpaperService.Engine` owns its own bitmap and coroutine scope; it reads only Relay's validated `cacheDir/relay-artwork` file URIs from the persisted now-playing snapshot. Settings → WALLPAPER opens Android's system preview/picker; Relay never changes wallpaper silently. The preset persists artwork fit, background, title visibility/position/size, ambient-blur/reflection effect, strength, and bars/wave visualization. Sound reactivity is opt-in and requests `RECORD_AUDIO`; `PlaybackService` extracts only low-resolution FFT bands from Relay's own audio session, broadcasts them at most 30 Hz while the wallpaper is visible, and does not store/export audio. Visualizers use Canvas so they render consistently across wallpaper preview and active surfaces. Device verification remains: permission allow/deny, preview + active wallpaper, local embedded/cached art, no-art fallback, title privacy, track switch, effect/visualizer rendering, and app-process recreation.
+- **Offline download storage limits** (plan §4.1 "Storage and offline"): Settings → STORAGE exposes a cycling storage limit (UNLIMITED / 1 / 2 / 5 / 10 / 20 GB), AUTO CLEANUP toggle, usage vs limit in the downloads header, and manual EVICT EXCEEDED when over limit with auto cleanup off. Oldest downloads are removed first; enforcement runs after each new download when auto cleanup is on. Settings persist in Room v33 and round-trip through backup.
 - Publishing pipeline (user-approved, repo `github.com/Livio21/relay-extensions`): build APK → sha256+size into `index.json` → `scripts/sign-index.sh` → commit+push → `gh release create <tag> app-debug.apk`. Catalog currently serves FMA 0.2.2 and ccMixter 0.1.1 (`relay-extensions/ccmixter-source`). ccMixter's file host 403s without a `Referer` from its own site, so the source declares one via `getMediaRequestHeaders()` — the API returning JSON proves nothing about the media, so always fetch a real file URL before publishing (see `EXTENSION_AUTHORING.md` §1.4).
 - Catalog entries may declare an optional HTTPS `supportUrl`. Relay validates it from the signed catalog and renders a host-owned SUPPORT button in extension details; add it to `index.json` and re-sign before publishing.
 
@@ -50,7 +51,7 @@ adb install -r androidApp/build/outputs/apk/debug/androidApp-debug.apk
 
 ## Where this sits in IMPLEMENTATION_PLAN.md
 
-Phases 0–8 are done. Phase 9's ordered feature list stands at: **1 downloads/offline ✅**, 2 gapless/replay-gain/crossfade ◐ (Media3 gapless, ReplayGain and bounded Android crossfade are implemented; the crossfade still needs a physical-device transition check), 3 equalizer ✅, 4 search ✅ (library + cross-source; no full-text index yet — not needed at this size), 5 profile/insights/charts ◐ (profile/history import/calendar done; chart export UI remains), 6 timed lyrics + karaoke ◐ (LRC playback sync done; no timestamp-capture editor, and network lyric sources still return plain text only), 7 wallpaper preset editor ◐ (artwork/title/effect/visualizer controls persist; device visual checks remain), 8 data-only themes ✅, 9 spectrum/waveform ◐ (bars/wave wallpaper renderer only), 10 audio-reactive wallpaper ◐ (Android-only, permission-gated), 11 shuffle profiles ✅, 12 multi-device sync ✗. Phase 4A is in progress: the Glance widget exists and the live-wallpaper renderer/picker is ready for device verification.
+Phases 0–8 are done. Phase 9's ordered feature list stands at: **1 downloads/offline ✅** (including storage limits/cleanup), 2 gapless/replay-gain/crossfade ◐ (Media3 gapless, ReplayGain and bounded Android crossfade are implemented; the crossfade still needs a physical-device transition check), 3 equalizer ✅, 4 search ✅ (library + cross-source; no full-text index yet — not needed at this size), 5 profile/insights/charts ◐ (profile/history import/calendar/chart export done; chart artwork tiles remain deferred), 6 timed lyrics + karaoke ◐ (LRC playback sync done; no timestamp-capture editor, and network lyric sources still return plain text only), 7 wallpaper preset editor ◐ (artwork/title/effect/visualizer controls persist; device visual checks remain), 8 data-only themes ✅, 9 spectrum/waveform ◐ (bars/wave wallpaper renderer only), 10 audio-reactive wallpaper ◐ (Android-only, permission-gated), 11 shuffle profiles ✅, 12 multi-device sync ◐ (Android wired/LAN/play-together foundation done; physical two-device checks and desktop parity remain). Phase 4A is in progress: the Glance widget exists and the live-wallpaper renderer/picker is ready for device verification.
 
 **Wired sync baseline** (Phase 9.3) is implemented and build-verified. Settings → DEVICE SYNC creates a checksummed, versioned `.relaysync` file in `Relay/sync/` (or a user-selected destination) and explicitly imports one. The bundle omits queue, device settings, music, stream URLs, credentials, APKs, and artwork caches. Import is transactional and non-destructive: favorites/history/charts are added, exact history duplicates are skipped, playlist name/content collisions become separately preserved `(... SYNC)` playlists, and conflicting flags/metadata/profile values are durable, visible records. For new conflicts, the user can explicitly keep local or apply the validated received flags, metadata, profile, or chart value; old notice-only records remain dismiss-only. Physical two-install round-trip remains required.
 
@@ -74,6 +75,10 @@ The user-facing `Crossfade` setting is persisted and defaults to off. It is capp
 
 **Implemented, pending device verification.** INSIGHTS now has an editable, backupable local profile; explicit Last.fm history import (at most 1,000 historical scrobbles); provenance/deduplication; an unlink action that either preserves or, after a confirmation, removes only imported Last.fm events; time ranges, totals, rankings, and calendar; and saved reproducible album-chart specs. A saved chart can be rendered on-device as a private text-first PNG and sent through Android's share sheet. It makes no metadata/artwork calls. Artwork tiles remain deferred until the host has a reliable cached-artwork mapping for historical album records; never bulk-fetch while rendering a chart.
 
+## Task 4 — Download storage limits (plan §4.1 "Storage and offline")
+
+**Implemented.** Settings → STORAGE now cycles a download limit, toggles automatic oldest-first cleanup, shows usage against the limit, and exposes manual EVICT EXCEEDED when auto cleanup is off. Enforcement runs after limit/cleanup changes and after each successful download when auto cleanup is enabled. Pure eviction selection is tested in `OfflineDownloadEviction.kt`.
+
 ## Backlog after these (rough value order)
 
 - Album/artist browse entities in the source API — additive `BaseRelaySource` methods + host screens; batch ABI churn into one version bump.
@@ -81,10 +86,9 @@ The user-facing `Crossfade` setting is persisted and defaults to off. It is capp
 - Extension install flow extraction from `MainActivity` (~220 lines welded to activity launchers — careful pass).
 - Optional follow-up to the state/actions flattening: group the still-flat `RelayAppState`/`RelayAppActions` fields into nested `LibraryUi`/`PlaybackUi`/`ExtensionUi`-style holders and hand each screen its own group. Lower value than the forwarding-layer removal that already landed — do it only if the flat lists start causing mistakes.
 - Media3-native queue edits (`moveMediaItem`/`removeMediaItem`) instead of the whole-queue rebuild in `MainActivity.applyQueueEdit` — only if the re-prepare becomes noticeable.
-- Download storage limits/cleanup scheduling (plan §4.1 "Storage and offline") — the manual list and DELETE ALL exist; automatic limits do not.
 - Downloads for playlist tracks whose source is uninstalled still fail with a clear message; consider offering "install extension" from that toast.
-- Desktop parity: desktop JSON-RPC extensions only handshake; desktop has no extension UI.
-- Phase 4A (widget exists minimally; live wallpaper not started) — see IMPLEMENTATION_PLAN.md.
+- Desktop parity: desktop JSON-RPC extensions only handshake; desktop has no extension UI or LAN sync wiring.
+- Phase 4A Glance widget — verify all three size buckets and keyguard hosting on device; live wallpaper device checks remain.
 
 ## Device/test notes
 

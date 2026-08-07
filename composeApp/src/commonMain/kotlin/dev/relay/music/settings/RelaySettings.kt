@@ -51,6 +51,8 @@ data class RelaySettings(
     val storageRootUri: String? = null,
     val backupSchedule: BackupSchedule = BackupSchedule.OFF,
     val autoBackupExpiryDays: Int = 30,
+    val downloadStorageLimitGb: Int = 0,
+    val downloadAutoCleanup: Boolean = false,
     val trustedRepositories: List<RepositoryDescriptor> = emptyList(),
     val installedExtensions: List<InstalledExtension> = emptyList(),
     /** Non-secret source preference values, keyed by extension ID then setting ID. */

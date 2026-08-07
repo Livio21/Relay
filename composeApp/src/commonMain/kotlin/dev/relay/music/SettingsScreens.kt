@@ -138,6 +138,9 @@ internal fun SettingsScreen(
     offlineDownloads: List<OfflineDownload> = emptyList(),
     onDeleteDownload: (String, String) -> Unit = { _, _ -> },
     onDeleteAllDownloads: () -> Unit = {},
+    onDownloadLimitChange: (Int) -> Unit = {},
+    onDownloadAutoCleanupChange: (Boolean) -> Unit = {},
+    onEvictExceededDownloads: () -> Unit = {},
     onPickShuffleSeed: ((String) -> Unit)? = null,
     onImportThemePack: (() -> Unit)? = null,
     onApplyThemePack: (String?) -> Unit = {},
@@ -168,7 +171,7 @@ internal fun SettingsScreen(
             MetadataSettings()
         }
         SettingsAccordion("STORAGE", submenu == SettingsSubmenu.STORAGE, { toggle(SettingsSubmenu.STORAGE) }) {
-            StorageSettings(settings.storageRootUri != null, onChooseStorageRoot, offlineDownloads, onDeleteDownload, onDeleteAllDownloads)
+            StorageSettings(settings, settings.storageRootUri != null, onChooseStorageRoot, offlineDownloads, onDeleteDownload, onDeleteAllDownloads, onDownloadLimitChange, onDownloadAutoCleanupChange, onEvictExceededDownloads)
         }
         SettingsAccordion("BACKUP AND RESTORE", submenu == SettingsSubmenu.BACKUP, { toggle(SettingsSubmenu.BACKUP) }) {
             BackupSettings(settings, onBackupExport, onBackupImport, onBackupScheduleChange, onAutoBackupExpiryChange)
@@ -1161,13 +1164,30 @@ internal val EQUALIZER_BAND_LABELS = listOf("LOW", "LOW MID", "MID", "HIGH MID",
 
 @Composable
 internal fun StorageSettings(
+    settings: RelaySettings,
     hasStorageRoot: Boolean,
     onChooseStorageRoot: () -> Unit,
     downloads: List<OfflineDownload> = emptyList(),
     onDeleteDownload: (String, String) -> Unit = { _, _ -> },
     onDeleteAllDownloads: () -> Unit = {},
+    onDownloadLimitChange: (Int) -> Unit = {},
+    onDownloadAutoCleanupChange: (Boolean) -> Unit = {},
+    onEvictExceededDownloads: () -> Unit = {},
 ) {
     var confirmDeleteAll by remember { mutableStateOf(false) }
+    val totalDownloadBytes = downloads.sumOf { it.sizeBytes }
+    val limitGb = settings.downloadStorageLimitGb
+    val limitBytes = limitGb * 1024L * 1024L * 1024L
+    val isExceeded = limitGb > 0 && totalDownloadBytes > limitBytes
+    val nextLimitGb = when (limitGb) {
+        0 -> 1
+        1 -> 2
+        2 -> 5
+        5 -> 10
+        10 -> 20
+        else -> 0
+    }
+
     Column {
         BasicText("STORAGE", style = RelayType.Track, modifier = Modifier.padding(bottom = 8.dp))
         BasicText(
@@ -1182,12 +1202,67 @@ internal fun StorageSettings(
             Modifier.fillMaxWidth().padding(top = 16.dp),
         )
 
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(top = 16.dp)
+                .border(1.dp, RelayColors.Line)
+                .padding(horizontal = 12.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            BasicText("STORAGE LIMIT", style = RelayType.Track, modifier = Modifier.weight(1f))
+            BasicText(
+                if (limitGb == 0) "UNLIMITED" else "$limitGb GB",
+                style = RelayType.Utility.copy(color = RelayColors.Signal),
+                modifier = Modifier
+                    .heightIn(min = 48.dp)
+                    .semantics { contentDescription = "Download storage limit ${if (limitGb == 0) "unlimited" else "$limitGb gigabytes"}" }
+                    .clickable(role = Role.Button) { onDownloadLimitChange(nextLimitGb) },
+            )
+        }
+
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(top = 8.dp)
+                .border(1.dp, RelayColors.Line)
+                .padding(horizontal = 12.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            BasicText("AUTO CLEANUP", style = RelayType.Track, modifier = Modifier.weight(1f))
+            BasicText(
+                if (settings.downloadAutoCleanup) "ENABLED" else "DISABLED",
+                style = RelayType.Utility.copy(color = if (settings.downloadAutoCleanup) RelayColors.Signal else RelayColors.Muted),
+                modifier = Modifier
+                    .heightIn(min = 48.dp)
+                    .semantics { contentDescription = "Automatic download cleanup ${if (settings.downloadAutoCleanup) "enabled" else "disabled"}" }
+                    .clickable(role = Role.Button) { onDownloadAutoCleanupChange(!settings.downloadAutoCleanup) },
+            )
+        }
+
+        BasicText(
+            if (settings.downloadAutoCleanup) "Automatically deletes oldest downloads when storage limit is exceeded." else "Manually clean up downloads when storage limit is exceeded.",
+            style = RelayType.Metadata,
+            modifier = Modifier.padding(top = 4.dp),
+        )
+
+        if (isExceeded) {
+            val exceededBytes = totalDownloadBytes - limitBytes
+            TransportAction(
+                label = "EVICT EXCEEDED (${formatFileSize(exceededBytes)})",
+                description = "Delete oldest downloads exceeding storage limit",
+                enabled = true,
+                onClick = onEvictExceededDownloads,
+                modifier = Modifier.fillMaxWidth().padding(top = 8.dp),
+            )
+        }
+
         BasicText("DOWNLOADS", style = RelayType.Track, modifier = Modifier.padding(top = 24.dp, bottom = 8.dp))
         BasicText(
-            text = if (downloads.isEmpty()) {
-                "No downloads yet. Use DOWNLOAD on a source track to keep it offline."
-            } else {
-                "${downloads.size} FILES · ${formatFileSize(downloads.sumOf { it.sizeBytes })}"
+            text = when {
+                downloads.isEmpty() -> "No downloads yet. Use DOWNLOAD on a source track to keep it offline."
+                limitGb > 0 -> "${downloads.size} FILES · ${formatFileSize(totalDownloadBytes)} / $limitGb GB"
+                else -> "${downloads.size} FILES · ${formatFileSize(totalDownloadBytes)}"
             },
             style = RelayType.Metadata,
         )
