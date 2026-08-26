@@ -24,8 +24,8 @@ and **extends `BaseRelaySource`** (or uses `RelaySourceFactory` for several sour
 | `resolveArtworkUrl(trackId)` | no | Lazy artwork for a selected track. Never one request per result row. |
 | `resolveDownloadUrl(trackId)` | no | Only when downloads use a different endpoint than streaming. |
 | `getMediaRequestHeaders()` | no | Headers Relay attaches to your stream/artwork/download requests. |
-| `getSettings()` | no | User-editable preferences (max 16): `TEXT`, `TOGGLE`, or `CHOICE`. Relay renders them under the extension's details screen and stores values per extension. |
-| `applySettings(values)` | with settings | Called right after load and on every user edit. Ignore unknown keys. Never declare secrets here. |
+| `getSettings()` | no | User-editable preferences (max 16): `TEXT`, `TOGGLE`, or `CHOICE`. Relay renders them under the extension's details screen and stores values per extension. This is where users enter their own free service API key when the source needs one. |
+| `applySettings(values)` | with settings | Called right after load and on every user edit. Ignore unknown keys. Never embed a default key or secret in the APK — keys come from the user, never from you. |
 
 ## Host-enforced bounds
 
