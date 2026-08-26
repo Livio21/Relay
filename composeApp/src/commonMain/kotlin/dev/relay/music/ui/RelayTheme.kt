@@ -28,6 +28,7 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.unit.dp
 import dev.relay.music.extension.ThemePack
@@ -39,8 +40,11 @@ import dev.relay.music.extension.ThemeEffectKind
 import dev.relay.music.extension.ThemeBackground
 import dev.relay.music.extension.ThemeLibraryLayout
 import dev.relay.music.extension.ThemePlayerLayout
+import dev.relay.music.extension.ThemeTransportLayout
 import dev.relay.music.extension.ThemeShadow
 import dev.relay.music.extension.validate
+import dev.relay.music.haptics.HapticAction
+import dev.relay.music.haptics.HapticPattern
 import coil3.compose.AsyncImage
 
 /**
@@ -61,27 +65,61 @@ object RelayColors {
 object RelayChrome {
     var borderWidth by mutableStateOf(1.dp); internal set
     var cornerRadius by mutableStateOf(0.dp); internal set
+    /** Buttons may round differently from panels; -1 inherits the panel radius. */
+    var buttonRadiusDpRaw by mutableStateOf(-1); internal set
     var fill by mutableStateOf(ThemeFill.OUTLINE); internal set
     var shadow by mutableStateOf(ThemeShadow.NONE); internal set
     var contentFont by mutableStateOf(ThemeFont.SANS); internal set
     var utilityFont by mutableStateOf(ThemeFont.MONO); internal set
     var iconSet by mutableStateOf(ThemeIconSet.TEXT); internal set
+    var titleUppercase by mutableStateOf(false); internal set
+    var typeScale by mutableStateOf(1f); internal set
+
+    val buttonRadius: Dp
+        get() = (if (buttonRadiusDpRaw < 0) cornerRadius.value else buttonRadiusDpRaw.toFloat()).dp
+}
+
+/** Per-action haptic remapping supplied by the active pack; null means use host defaults. */
+object RelayHaptics {
+    private var overrides by mutableStateOf(emptyMap<HapticAction, HapticPattern>())
+
+    fun patternFor(action: HapticAction): HapticPattern? = overrides[action]
+
+    internal fun replace(newOverrides: Map<HapticAction, HapticPattern>) {
+        overrides = newOverrides
+    }
 }
 
 /** Effects remain host-rendered, bounded data; Theme Packs cannot provide rendering code. */
 object RelayPresentation {
     var libraryLayout by mutableStateOf(ThemeLibraryLayout.LIST); internal set
     var playerLayout by mutableStateOf(ThemePlayerLayout.STANDARD); internal set
+    var transportLayout by mutableStateOf(ThemeTransportLayout.TEXT_ROW); internal set
+    var showIndexRail by mutableStateOf(true); internal set
     var background by mutableStateOf(ThemeBackground.NONE); internal set
     var backgroundAsset by mutableStateOf<String?>(null); internal set
     var effects by mutableStateOf<List<ThemeEffect>>(emptyList()); internal set
+    var activePackId by mutableStateOf<String?>(null); internal set
+
+    /**
+     * Host-supplied resolver turning a validated pack asset token into a renderable URI.
+     * Shared code never touches storage itself. Settable by platform hosts only at startup.
+     */
+    var assetResolver: (packId: String?, token: String?) -> String?
+        by mutableStateOf<(String?, String?) -> String?>({ _, _ -> null })
 }
 
 private val RelayChrome.shape
     get() = if (cornerRadius.value == 0f) RectangleShape else RoundedCornerShape(cornerRadius)
 
+internal val RelayChrome.buttonShape
+    get() = if (buttonRadius.value == 0f) RectangleShape else RoundedCornerShape(buttonRadius)
+
 fun Modifier.relayBorder(color: Color = RelayColors.Line): Modifier =
     if (RelayChrome.borderWidth.value == 0f) this else border(RelayChrome.borderWidth, color, RelayChrome.shape)
+
+fun Modifier.relayButtonBorder(color: Color = RelayColors.Line): Modifier =
+    if (RelayChrome.borderWidth.value == 0f) this else border(RelayChrome.borderWidth, color, RelayChrome.buttonShape)
 
 fun Modifier.relayChrome(fillColor: Color = RelayColors.Panel): Modifier =
     then(if (RelayChrome.fill == ThemeFill.PANEL) Modifier.background(fillColor, RelayChrome.shape) else Modifier)
@@ -93,45 +131,64 @@ fun Modifier.relayChrome(fillColor: Color = RelayColors.Panel): Modifier =
             },
         )
 
+fun Modifier.relayButtonChrome(fillColor: Color = RelayColors.Panel): Modifier =
+    then(if (RelayChrome.fill == ThemeFill.PANEL) Modifier.background(fillColor, RelayChrome.buttonShape) else Modifier)
+        .then(
+            when (RelayChrome.shadow) {
+                ThemeShadow.NONE -> Modifier
+                ThemeShadow.SOFT -> Modifier.shadow(4.dp, RelayChrome.buttonShape)
+                ThemeShadow.HARD -> Modifier.shadow(8.dp, RelayChrome.buttonShape)
+            },
+        )
+
 private fun ThemeFont.asFontFamily(): FontFamily = when (this) {
     ThemeFont.SANS -> FontFamily.SansSerif
     ThemeFont.SERIF -> FontFamily.Serif
     ThemeFont.MONO -> FontFamily.Monospace
 }
 
-/** Computed per read so text styles always carry the active palette. */
+/** Computed per read so text styles always carry the active palette, scale, and case. */
 object RelayType {
+    private val scale: Float get() = RelayChrome.typeScale
+
     val Title: TextStyle
         get() = TextStyle(
             color = RelayColors.Paper,
             fontFamily = RelayChrome.contentFont.asFontFamily(),
-            fontSize = 24.sp,
+            fontSize = (24f * scale).sp,
             fontWeight = FontWeight.Bold,
-            letterSpacing = 1.2.sp,
+            letterSpacing = (1.2f * scale).sp,
         )
     val Track: TextStyle
         get() = TextStyle(
             color = RelayColors.Paper,
             fontFamily = RelayChrome.contentFont.asFontFamily(),
-            fontSize = 15.sp,
+            fontSize = (15f * scale).sp,
             fontWeight = FontWeight.Medium,
         )
     val Metadata: TextStyle
         get() = TextStyle(
             color = RelayColors.Muted,
             fontFamily = RelayChrome.contentFont.asFontFamily(),
-            fontSize = 12.sp,
+            fontSize = (12f * scale).sp,
         )
     val Utility: TextStyle
         get() = TextStyle(
             color = RelayColors.Muted,
             fontFamily = RelayChrome.utilityFont.asFontFamily(),
-            fontSize = 11.sp,
-            letterSpacing = 0.5.sp,
+            fontSize = (11f * scale).sp,
+            letterSpacing = (0.5f * scale).sp,
         )
 }
 
-/** Applies a validated data-only Theme Pack's colors; null restores Relay's defaults. */
+/**
+ * Applies the active pack's title casing to display titles. Styles cannot transform text
+ * cross-platform, so titled render sites wrap their strings with this.
+ */
+fun CharSequence.asThemedTitle(): String =
+    if (RelayChrome.titleUppercase) toString().uppercase() else toString()
+
+/** Applies a validated data-only Theme Pack's tokens; null restores Relay's defaults. */
 fun applyThemePack(pack: ThemePack?) {
     if (pack == null || pack.validate() != null) {
         RelayColors.Ink = DEFAULT_INK
@@ -143,16 +200,23 @@ fun applyThemePack(pack: ThemePack?) {
         RelayColors.Danger = DEFAULT_DANGER
         RelayChrome.borderWidth = 1.dp
         RelayChrome.cornerRadius = 0.dp
+        RelayChrome.buttonRadiusDpRaw = -1
         RelayChrome.fill = ThemeFill.OUTLINE
         RelayChrome.shadow = ThemeShadow.NONE
         RelayChrome.contentFont = ThemeFont.SANS
         RelayChrome.utilityFont = ThemeFont.MONO
         RelayChrome.iconSet = ThemeIconSet.TEXT
+        RelayChrome.titleUppercase = false
+        RelayChrome.typeScale = 1f
+        RelayHaptics.replace(emptyMap())
         RelayPresentation.libraryLayout = ThemeLibraryLayout.LIST
         RelayPresentation.playerLayout = ThemePlayerLayout.STANDARD
+        RelayPresentation.transportLayout = ThemeTransportLayout.TEXT_ROW
+        RelayPresentation.showIndexRail = true
         RelayPresentation.background = ThemeBackground.NONE
         RelayPresentation.backgroundAsset = null
         RelayPresentation.effects = emptyList()
+        RelayPresentation.activePackId = null
         return
     }
     RelayColors.Ink = pack.colors.ink.asThemeColor(DEFAULT_INK)
@@ -164,16 +228,27 @@ fun applyThemePack(pack: ThemePack?) {
     RelayColors.Danger = pack.colors.danger.asThemeColor(DEFAULT_DANGER)
     RelayChrome.borderWidth = pack.presentation.chrome.borderWidthDp.dp
     RelayChrome.cornerRadius = pack.presentation.chrome.cornerRadiusDp.dp
+    RelayChrome.buttonRadiusDpRaw = pack.presentation.chrome.buttonRadiusDp
     RelayChrome.fill = pack.presentation.chrome.fill
     RelayChrome.shadow = pack.presentation.chrome.shadow
     RelayChrome.contentFont = pack.presentation.typography.contentFont
     RelayChrome.utilityFont = pack.presentation.typography.utilityFont
     RelayChrome.iconSet = pack.presentation.icons.set
+    RelayChrome.titleUppercase = pack.presentation.typography.titleUppercase
+    RelayChrome.typeScale = pack.presentation.typography.typeScale.coerceIn(0.85f, 1.25f)
+    RelayHaptics.replace(pack.presentation.haptics.actions.mapNotNull { (action, pattern) ->
+        val actionEnum = HapticAction.entries.firstOrNull { it.name == action }
+        val patternEnum = HapticPattern.entries.firstOrNull { it.name == pattern }
+        if (actionEnum != null && patternEnum != null) actionEnum to patternEnum else null
+    }.toMap())
     RelayPresentation.libraryLayout = pack.presentation.libraryLayout
     RelayPresentation.playerLayout = pack.presentation.playerLayout
+    RelayPresentation.transportLayout = pack.presentation.transportLayout
+    RelayPresentation.showIndexRail = pack.presentation.showIndexRail
     RelayPresentation.background = pack.presentation.background
     RelayPresentation.backgroundAsset = pack.presentation.backgroundAsset
     RelayPresentation.effects = pack.presentation.effects.toList()
+    RelayPresentation.activePackId = pack.id
 }
 
 fun String.asThemeColor(fallback: Color): Color = runCatching {
@@ -214,9 +289,20 @@ private fun ThemeBackgroundLayer(artworkUri: String?, modifier: Modifier) {
             )
             Box(modifier.background(RelayColors.Ink.copy(alpha = 0.58f)))
         }
-        // ponytail: packs are JSON-only today; use a safe panel until an archive importer
-        // copies and resolves bounded assets inside Relay-owned storage.
-        ThemeBackground.ASSET -> Box(modifier.background(RelayColors.Panel))
+        // Pack assets resolve through the host-owned store; a missing file falls back safely.
+        ThemeBackground.ASSET -> {
+            val model = RelayPresentation.assetResolver(RelayPresentation.activePackId, RelayPresentation.backgroundAsset)
+            if (model != null && localThemeImage(model) != null) {
+                AsyncImage(
+                    model = model,
+                    contentDescription = null,
+                    contentScale = ContentScale.Crop,
+                    modifier = modifier,
+                )
+            } else {
+                Box(modifier.background(RelayColors.Panel))
+            }
+        }
     }
 }
 

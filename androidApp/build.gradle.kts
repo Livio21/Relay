@@ -7,6 +7,21 @@ val localProperties = Properties().apply {
         ?.use(::load)
 }
 
+// Version single source: RELAY_VERSION in gradle.properties (see IMPLEMENTATION_PLAN.md Phase 10).
+val relayVersion = providers.gradleProperty("RELAY_VERSION").get()
+val relayVersionParts = relayVersion.removeSuffix("-SNAPSHOT").split('.').map { it.toInt() }
+check(relayVersionParts.size == 3) { "RELAY_VERSION must be MAJOR.MINOR.PATCH, got '$relayVersion'" }
+// versionCode = major*100000 + minor*1000 + patch*10; the trailing digit stays free for build metadata.
+val relayVersionCode = relayVersionParts[0] * 100_000 + relayVersionParts[1] * 1_000 + relayVersionParts[2] * 10
+
+// Release signing reads an untracked keystore.properties so forks build out of the box.
+val keystoreProperties = Properties().apply {
+    rootProject.file("keystore.properties")
+        .takeIf { it.isFile }
+        ?.inputStream()
+        ?.use(::load)
+}
+
 fun buildConfigString(value: String): String = "\"${value.replace("\\", "\\\\").replace("\"", "\\\"")}\""
 
 plugins {
@@ -23,8 +38,8 @@ android {
         applicationId = "dev.relay.music"
         minSdk = 23
         targetSdk = 36
-        versionCode = 1
-        versionName = "0.1.0"
+        versionCode = relayVersionCode
+        versionName = relayVersion
         buildConfigField(
             "String",
             "LASTFM_API_KEY",
@@ -35,6 +50,30 @@ android {
             "LASTFM_SHARED_SECRET",
             buildConfigString(localProperties.getProperty("LASTFM_SHARED_SECRET").orEmpty()),
         )
+    }
+
+    signingConfigs {
+        if (keystoreProperties.isNotEmpty()) {
+            create("release") {
+                storeFile = rootProject.file(keystoreProperties.getProperty("storeFile"))
+                storePassword = keystoreProperties.getProperty("storePassword")
+                keyAlias = keystoreProperties.getProperty("keyAlias")
+                keyPassword = keystoreProperties.getProperty("keyPassword")
+            }
+        }
+    }
+
+    buildTypes {
+        release {
+            // Unsigned release falls back to the debug key so a clean clone always builds;
+            // with keystore.properties present it is signed for publishing.
+            signingConfig = if (keystoreProperties.isNotEmpty()) {
+                signingConfigs.getByName("release")
+            } else {
+                signingConfigs.getByName("debug")
+            }
+            isMinifyEnabled = false
+        }
     }
 
     compileOptions {
@@ -68,6 +107,9 @@ dependencies {
     implementation(libs.androidx.glance.appwidget)
     implementation(libs.androidx.documentfile)
     implementation(libs.androidx.work.runtime)
+    // LAN pairing: the host renders a join-link QR; guests scan it instead of typing addresses.
+    implementation(libs.zxing.core)
+    implementation(libs.zxing.android.embedded)
     implementation(libs.androidx.ui.tooling.preview)
     debugImplementation(libs.androidx.ui.tooling)
     ksp(libs.room3.compiler)

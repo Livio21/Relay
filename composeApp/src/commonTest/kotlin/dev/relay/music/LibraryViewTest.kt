@@ -45,6 +45,20 @@ class LibraryViewTest {
     }
 
     @Test
+    fun excludesArchivedTracksEvenWhenTheyMatch() {
+        val archivedFlags = flags + (trackKey(library[0]) to TrackFlags(archived = true))
+
+        assertEquals(
+            listOf("Signal Test", "Night Transfer"),
+            libraryView(library, archivedFlags).map { it.title },
+        )
+        assertEquals(
+            emptyList(),
+            libraryView(library, archivedFlags, query = "wideband").map { it.title },
+        )
+    }
+
+    @Test
     fun sortsByTheChosenFieldWithBlanksLast() {
         val noFlags = emptyMap<String, TrackFlags>()
         val visible = library.dropLast(1)

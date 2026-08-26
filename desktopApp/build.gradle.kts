@@ -44,7 +44,8 @@ compose.desktop {
         nativeDistributions {
             targetFormats(org.jetbrains.compose.desktop.application.dsl.TargetFormat.Dmg)
             packageName = "Relay"
-            packageVersion = "1.0.0"
+            // Mirrors RELAY_VERSION's numeric triple (see gradle.properties).
+            packageVersion = providers.gradleProperty("RELAY_VERSION").get().removeSuffix("-SNAPSHOT")
         }
     }
 }

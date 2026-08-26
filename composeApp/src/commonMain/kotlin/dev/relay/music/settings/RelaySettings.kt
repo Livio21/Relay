@@ -3,6 +3,7 @@ package dev.relay.music.settings
 import dev.relay.music.extension.RepositoryDescriptor
 import dev.relay.music.extension.ThemePack
 import dev.relay.music.extension.builtInThemePacks
+import dev.relay.music.haptics.HapticIntensity
 import dev.relay.music.playback.ShuffleProfile
 import dev.relay.music.wallpaper.WallpaperPreset
 import dev.relay.music.extension.InstalledExtension
@@ -64,6 +65,8 @@ data class RelaySettings(
     val showLockscreenMetadata: Boolean = false,
     /** Static system-wallpaper choices. No artwork, URLs, or playback data is persisted here. */
     val wallpaperPreset: WallpaperPreset = WallpaperPreset(),
+    /** Global strength of interaction haptics; themes may remap patterns per action. */
+    val hapticIntensity: HapticIntensity = HapticIntensity.MEDIUM,
 )
 
 fun RelaySettings.activeShuffleProfile(): ShuffleProfile =

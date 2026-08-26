@@ -6,8 +6,9 @@ import dev.relay.music.model.TrackFlags
 enum class LibrarySort { TITLE, ARTIST, ALBUM }
 
 /**
- * What the library list shows: hidden tracks removed, an optional case-insensitive search over
- * title/artist/album, then pinned tracks first and the chosen field ordered with blanks last.
+ * What the library list shows: hidden and archived tracks removed, an optional case-insensitive
+ * search over title/artist/album, then pinned tracks first and the chosen field ordered with
+ * blanks last.
  */
 fun libraryView(
     tracks: List<Track>,
@@ -19,6 +20,7 @@ fun libraryView(
     return tracks
         .asSequence()
         .filterNot { flags[trackKey(it)]?.hidden == true }
+        .filterNot { flags[trackKey(it)]?.archived == true }
         .filter { needle.isEmpty() || it.matchesLibraryQuery(needle) }
         .sortedWith(
             compareByDescending<Track> { flags[trackKey(it)]?.pinned == true }

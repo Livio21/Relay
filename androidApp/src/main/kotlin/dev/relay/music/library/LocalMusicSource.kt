@@ -24,6 +24,12 @@ class LocalMusicSource(
     override val id = "local"
     override val displayName = "Relay music"
 
+    /**
+     * Tracks whose file revision (`lastModified:length`) is unchanged are reused between scans,
+     * so a refresh skips metadata/artwork work for the vast majority of an unchanged library.
+     */
+    private val revisionCache = mutableMapOf<String, Pair<String, Track>>()
+
     override suspend fun tracks(): List<Track> = withContext(Dispatchers.IO) {
         val rootUri = storageRootUri() ?: return@withContext emptyList()
         val musicDirectory = RelayStorage.musicDirectory(context, rootUri)
@@ -49,8 +55,14 @@ class LocalMusicSource(
     }
 
     private fun documentTrack(file: DocumentFile): Track? {
+        val revision = "${file.lastModified()}:${file.length()}"
+        revisionCache[file.uri.toString()]?.takeIf { (cachedRevision, cachedTrack) ->
+            cachedRevision == revision &&
+                (cachedTrack.artworkUri == null || File(Uri.parse(cachedTrack.artworkUri).path!!).isFile)
+        }?.let { return it.second }
+
         val retriever = MediaMetadataRetriever()
-        return try {
+        val track = try {
             retriever.setDataSource(context, file.uri)
             val embeddedArtwork = retriever.embeddedPicture
             val artwork = embeddedArtwork?.let { embeddedArtworkUri(file, it) }
@@ -70,13 +82,15 @@ class LocalMusicSource(
                     ?.substringBefore('/')?.toIntOrNull(),
                 discNumber = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_DISC_NUMBER)
                     ?.substringBefore('/')?.toIntOrNull(),
-                sourceRevision = "${file.lastModified()}:${file.length()}",
+                sourceRevision = revision,
             )
         } catch (_: RuntimeException) {
             null
         } finally {
             retriever.release()
         }
+        if (track != null) revisionCache[file.uri.toString()] = revision to track
+        return track
     }
 
     private fun embeddedArtworkUri(file: DocumentFile, bytes: ByteArray): String? {

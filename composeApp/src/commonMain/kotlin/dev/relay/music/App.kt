@@ -35,6 +35,7 @@ import androidx.compose.ui.semantics.Role
 import dev.relay.music.model.Track
 import dev.relay.music.model.MetadataHealth
 import dev.relay.music.settings.activeShuffleProfile
+import dev.relay.music.wallpaper.WallpaperEditorScreen
 import dev.relay.music.ui.RelayColors
 import dev.relay.music.ui.RelayPresentation
 import dev.relay.music.ui.RelayTheme
@@ -65,13 +66,21 @@ internal fun RelayAppContent(
     val queueOpen = destination.queueOpen
     val lyricsOpen = destination.lyricsOpen
     val playerOptionsOpen = destination.playerOptionsOpen
+    val wallpaperEditorOpen = destination.wallpaperEditorOpen
     val openPlaylist = state.playlists.firstOrNull { it.id == selectedPlaylistId }
     var libraryQuery by remember { mutableStateOf("") }
     var librarySort by remember { mutableStateOf(LibrarySort.TITLE) }
-    val visibleTracks = libraryView(state.tracks, state.trackFlags)
-    val listedTracks = libraryView(state.tracks, state.trackFlags, libraryQuery, librarySort)
-    val tracksNeedingMetadata = visibleTracks.filter {
-        it.metadataHealth() == MetadataHealth.NEEDS_REVIEW && trackKey(it) !in state.metadataIgnoredTrackKeys
+    // Keyed so playback position ticks and other unrelated recompositions never re-sort the library.
+    val visibleTracks = remember(state.tracks, state.trackFlags) {
+        libraryView(state.tracks, state.trackFlags)
+    }
+    val listedTracks = remember(state.tracks, state.trackFlags, libraryQuery, librarySort) {
+        libraryView(state.tracks, state.trackFlags, libraryQuery, librarySort)
+    }
+    val tracksNeedingMetadata = remember(visibleTracks, state.metadataIgnoredTrackKeys) {
+        visibleTracks.filter {
+            it.metadataHealth() == MetadataHealth.NEEDS_REVIEW && trackKey(it) !in state.metadataIgnoredTrackKeys
+        }
     }
     val pagerState = rememberPagerState(initialPage = PAGER_START_PAGE) { Int.MAX_VALUE }
     val navigationScope = rememberCoroutineScope()
@@ -124,6 +133,23 @@ internal fun RelayAppContent(
             ),
         ) {
         val landscape = maxWidth > maxHeight
+        if (wallpaperEditorOpen) {
+            WallpaperEditorScreen(
+                initial = state.settings.wallpaperPreset,
+                track = state.playback.currentTrack,
+                positionMs = state.playback.positionMs,
+                durationMs = state.playback.durationMs,
+                isPlaying = state.playback.isPlaying,
+                nowEpochMs = state.nowEpochMs,
+                onSave = { preset ->
+                    actions.onWallpaperSettingsChange?.invoke(state.settings.copy(wallpaperPreset = preset))
+                    goBack()
+                },
+                onCancel = ::goBack,
+                modifier = Modifier.fillMaxSize(),
+            )
+            return@BoxWithConstraints
+        }
         Column(
             modifier = Modifier
                 .fillMaxSize()
@@ -416,6 +442,23 @@ internal fun RelayAppContent(
                         onImportThemePack = actions.onImportThemePack,
                         onApplyThemePack = actions.onApplyThemePack,
                         onRemoveThemePack = actions.onRemoveThemePack,
+                        onImportThemeBackground = actions.onImportThemeBackground,
+                        onExportDiagnostics = actions.onExportDiagnostics,
+                        qrImage = state.lanPairingQr,
+                        discoveredHosts = state.discoveredLanHosts,
+                        discoveringMode = state.discoveringLanMode,
+                        onScanNetwork = actions.onScanNetwork,
+                        onJoinDiscovered = actions.onJoinDiscovered,
+                        onScanPairingLink = actions.onScanPairingLink,
+                        onEditComposition = {
+                            navigateTo(
+                                destination.copy(
+                                    view = SETTINGS_VIEW,
+                                    settingsSubmenu = SettingsSubmenu.WALLPAPER,
+                                    wallpaperEditorOpen = true,
+                                ),
+                            )
+                        },
                         onOpenAlbumWallpaperPicker = actions.onOpenAlbumWallpaperPicker,
                         submenu = settingsSubmenu,
                         onSubmenuChange = { submenu ->
@@ -462,6 +505,10 @@ internal fun RelayAppContent(
                             navigateTo(destination.copy(view = NOW_PLAYING_VIEW, playerOptionsOpen = true))
                         }
                     },
+                    sleepTimer = state.sleepTimer,
+                    onSelectSleepTimer = actions.onSelectSleepTimer,
+                    onImportLyricsFile = actions.onImportLyricsFile,
+                    onExportLyricsFile = actions.onExportLyricsFile,
                     onOpenNowPlaying = { navigateTo(destination.forView(NOW_PLAYING_VIEW)) },
                     modifier = Modifier.align(Alignment.BottomCenter).fillMaxWidth(),
                 )
@@ -495,11 +542,12 @@ internal data class RelayDestination(
     val queueOpen: Boolean = false,
     val lyricsOpen: Boolean = false,
     val playerOptionsOpen: Boolean = false,
+    val wallpaperEditorOpen: Boolean = false,
 ) {
     /** True when this destination is a sub-screen rather than a plain top-level page. */
     val hasSubState: Boolean
         get() = reviewTrack != null || settingsSubmenu != null || extensionsSubmenu != null || queueOpen || lyricsOpen || playerOptionsOpen ||
-            (view == PLAYLISTS_VIEW && selectedPlaylistId != null)
+            wallpaperEditorOpen || (view == PLAYLISTS_VIEW && selectedPlaylistId != null)
 
     fun forView(view: Int) = copy(
         view = view,
@@ -513,6 +561,7 @@ internal data class RelayDestination(
         queueOpen = false,
         lyricsOpen = false,
         playerOptionsOpen = false,
+        wallpaperEditorOpen = false,
     )
 }
 

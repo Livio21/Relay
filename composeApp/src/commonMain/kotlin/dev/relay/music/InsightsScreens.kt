@@ -32,6 +32,8 @@ import dev.relay.music.model.InsightEntry
 import dev.relay.music.model.InsightsRange
 import dev.relay.music.model.AlbumChartSpec
 import dev.relay.music.model.ListeningDay
+import dev.relay.music.haptics.HapticAction
+import dev.relay.music.haptics.LocalRelayHaptics
 import dev.relay.music.model.ListeningEvent
 import dev.relay.music.model.LocalProfile
 import dev.relay.music.model.albumChartEntries
@@ -78,6 +80,7 @@ internal fun InsightsScreen(
             )
         }
         Row(modifier = Modifier.fillMaxWidth()) {
+            val haptics = LocalRelayHaptics.current
             InsightsRange.entries.forEach { candidate ->
                 BasicText(
                     text = candidate.label(),
@@ -86,11 +89,14 @@ internal fun InsightsScreen(
                     ),
                     modifier = Modifier
                         .weight(1f)
-                        .heightIn(min = 44.dp)
+                        .heightIn(min = 48.dp)
                         .border(1.dp, RelayColors.Line)
                         .semantics { contentDescription = "Show ${candidate.label()} insights" }
-                        .clickable(role = Role.Tab) { range = candidate }
-                        .padding(horizontal = 4.dp, vertical = 13.dp),
+                        .clickable(role = Role.Tab) {
+                            haptics.perform(HapticAction.TAB_CHANGE)
+                            range = candidate
+                        }
+                        .padding(horizontal = 4.dp, vertical = 15.dp),
                 )
             }
         }

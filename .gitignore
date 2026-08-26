@@ -14,6 +14,8 @@ local.properties
 *.keystore
 *.p12
 *.pem
+# Release signing configuration (untracked; see docs/RELEASE_CHECKLIST.md).
+keystore.properties
 
 *.xcuserstate
 xcuserdata/

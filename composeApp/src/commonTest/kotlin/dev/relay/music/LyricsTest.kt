@@ -1,6 +1,8 @@
 package dev.relay.music
 
 import dev.relay.music.model.activeLineIndex
+import dev.relay.music.model.adjustLrcOffset
+import dev.relay.music.model.currentLrcOffset
 import dev.relay.music.model.formatLrcTimestamp
 import dev.relay.music.model.parseLrc
 import dev.relay.music.model.prepareLrcForSave
@@ -105,5 +107,22 @@ class LyricsTest {
     fun saveRejectsMalformedOrPartiallyTimedLyrics() {
         assertTrue(prepareLrcForSave("[00:72.00]Nope").isFailure)
         assertTrue(prepareLrcForSave("[00:01.00]One\nTwo").isFailure)
+    }
+
+    @Test
+    fun offsetNudgeAddsReplacesAndIgnoresUntimedContent() {
+        assertEquals("[00:10.00]One", adjustLrcOffset("[00:10.00]One", 0))
+        // Positive deltas make words earlier, so the highlight target grows.
+        val nudged = adjustLrcOffset("[offset:+100]\n[00:10.00]One", 250)
+        assertEquals(350L, currentLrcOffset(nudged))
+        assertEquals(100L, currentLrcOffset(adjustLrcOffset(nudged, -250)))
+        // A missing tag is prepended; untimed lyrics are untouched.
+        assertEquals("[offset:-100]\n[00:10.00]One", adjustLrcOffset("[00:10.00]One", -100))
+        assertEquals("plain", adjustLrcOffset("plain", 500))
+        // The nudge actually moves the active line.
+        val timed = parseLrc(adjustLrcOffset("[00:10.00]One\n[00:20.00]Two", 500))
+        requireNotNull(timed)
+        assertEquals(-1, parseLrc("[00:10.00]One\n[00:20.00]Two")?.activeLineIndex(9_700))
+        assertEquals(0, timed.activeLineIndex(9_700))
     }
 }

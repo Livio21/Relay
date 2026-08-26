@@ -23,11 +23,15 @@ import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.disabled
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
+import dev.relay.music.haptics.HapticAction
+import dev.relay.music.haptics.LocalRelayHaptics
 import dev.relay.music.model.Track
 import dev.relay.music.ui.RelayColors
 import dev.relay.music.ui.RelayChrome
 import dev.relay.music.ui.RelayType
 import dev.relay.music.ui.relayBorder
+import dev.relay.music.ui.relayButtonBorder
+import dev.relay.music.ui.relayButtonChrome
 import dev.relay.music.ui.relayChrome
 
 @Composable
@@ -37,9 +41,14 @@ internal fun TransportAction(
     enabled: Boolean,
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
+    hapticAction: HapticAction = HapticAction.TRANSPORT_PRESS,
 ) {
+    val haptics = LocalRelayHaptics.current
     val actionModifier = if (enabled) {
-        Modifier.clickable(role = Role.Button, onClick = onClick)
+        Modifier.clickable(role = Role.Button) {
+            haptics.perform(hapticAction)
+            onClick()
+        }
     } else {
         Modifier.semantics { disabled() }
     }
@@ -47,8 +56,8 @@ internal fun TransportAction(
     Box(
         modifier = modifier
             .heightIn(min = 48.dp)
-            .relayChrome()
-            .relayBorder()
+            .relayButtonChrome()
+            .relayButtonBorder()
             .semantics { contentDescription = description }
             .then(actionModifier),
         contentAlignment = Alignment.Center,
@@ -125,9 +134,9 @@ internal fun TrackOrderRow(
                 modifier = Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 4.dp),
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
             ) {
-                TransportAction("UP", "Move ${track.title} up", !isFirst, { onMove(-1) }, Modifier.weight(1f))
-                TransportAction("DOWN", "Move ${track.title} down", !isLast, { onMove(1) }, Modifier.weight(1f))
-                TransportAction("REMOVE", "Remove ${track.title} from playlist", true, onRemove, Modifier.weight(1f))
+                TransportAction("UP", "Move ${track.title} up", !isFirst, { onMove(-1) }, Modifier.weight(1f), HapticAction.QUEUE_REORDER)
+                TransportAction("DOWN", "Move ${track.title} down", !isLast, { onMove(1) }, Modifier.weight(1f), HapticAction.QUEUE_REORDER)
+                TransportAction("REMOVE", "Remove ${track.title} from playlist", true, onRemove, Modifier.weight(1f), HapticAction.QUEUE_REORDER)
             }
         }
     }

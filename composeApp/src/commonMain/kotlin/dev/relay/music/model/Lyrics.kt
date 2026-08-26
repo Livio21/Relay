@@ -103,6 +103,26 @@ fun prepareLrcForSave(content: String): Result<String> = runCatching {
         .joinToString("\n")
 }
 
+/** The `[offset:]` value carried by [content], or 0 when absent. */
+fun currentLrcOffset(content: String): Long =
+    OFFSET_TAG.find(content)?.groupValues?.get(1)?.toLongOrNull() ?: 0L
+
+/**
+ * Nudges timed lyrics by shifting the `[offset:]` tag; positive deltas make words appear earlier.
+ * When no tag exists one is prepended. Plain (untimed) lyrics are returned unchanged.
+ */
+fun adjustLrcOffset(content: String, deltaMs: Long): String {
+    if (deltaMs == 0L || parseLrc(content) == null) return content
+    val updated = (currentLrcOffset(content) + deltaMs).coerceIn(-600_000L, 600_000L)
+    val tag = "[offset:${if (updated >= 0) "+" else ""}$updated]"
+    return if (OFFSET_TAG.containsMatchIn(content)) {
+        // The generated tag contains no '$' or '\' characters, so string replacement is literal.
+        OFFSET_TAG.replaceFirst(content, tag)
+    } else {
+        "$tag\n$content"
+    }
+}
+
 /**
  * Index of the line that should be highlighted at this position, or -1 before the first one.
  * Lines with no text (LRC uses them to mark instrumental gaps) still take their turn.

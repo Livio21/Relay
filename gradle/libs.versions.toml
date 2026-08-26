@@ -16,6 +16,9 @@ documentfile = "1.1.0"
 work = "2.11.2"
 ui-tooling-preview = "1.11.4"
 ui-tooling = "1.11.4"
+# LAN pairing UX: QR generation (host) and in-app camera scanning (guest).
+zxing-core = "3.5.3"
+zxing-android-embedded = "4.3.0"
 
 [libraries]
 androidx-activity-compose = { module = "androidx.activity:activity-compose", version.ref = "androidx-activity" }
@@ -40,6 +43,8 @@ androidx-documentfile = { module = "androidx.documentfile:documentfile", version
 androidx-work-runtime = { module = "androidx.work:work-runtime-ktx", version.ref = "work" }
 androidx-ui-tooling-preview = { group = "androidx.compose.ui", name = "ui-tooling-preview", version.ref = "ui-tooling-preview" }
 androidx-ui-tooling = { group = "androidx.compose.ui", name = "ui-tooling", version.ref = "ui-tooling" }
+zxing-core = { module = "com.google.zxing:core", version.ref = "zxing-core" }
+zxing-android-embedded = { group = "com.journeyapps", name = "zxing-android-embedded", version.ref = "zxing-android-embedded" }
 
 [plugins]
 android-application = { id = "com.android.application", version.ref = "agp" }

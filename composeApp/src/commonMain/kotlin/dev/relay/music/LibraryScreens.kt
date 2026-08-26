@@ -36,6 +36,8 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import dev.relay.music.haptics.HapticAction
+import dev.relay.music.haptics.LocalRelayHaptics
 import dev.relay.music.model.Playlist
 import dev.relay.music.model.Track
 import dev.relay.music.model.TrackFlags
@@ -44,6 +46,7 @@ import dev.relay.music.playback.PlaybackState
 import dev.relay.music.ui.RelayColors
 import dev.relay.music.ui.RelayPresentation
 import dev.relay.music.ui.RelayType
+import dev.relay.music.ui.asThemedTitle
 import dev.relay.music.extension.ThemeLibraryLayout
 import coil3.compose.AsyncImage
 
@@ -139,12 +142,13 @@ private fun TrackGridCard(
     onOptions: () -> Unit,
 ) {
     val effective = track.resolveEffectiveMetadata()
+    val haptics = LocalRelayHaptics.current
     Column(
         modifier = Modifier
             .fillMaxWidth()
             .background(if (active) RelayColors.Panel else RelayColors.Ink)
             .semantics { contentDescription = "Play ${effective.display.title} by ${effective.display.artist}" }
-            .combinedClickable(role = Role.Button, onClick = onClick, onLongClick = onOptions),
+            .combinedClickable(role = Role.Button, onClick = { haptics.perform(HapticAction.SELECT_TRACK); onClick() }, onLongClick = onOptions),
     ) {
         Box(Modifier.fillMaxWidth().aspectRatio(1f).background(RelayColors.Panel)) {
             track.artworkUri?.let { artworkUri ->
@@ -199,6 +203,7 @@ internal fun TrackRow(
     val effective = track.resolveEffectiveMetadata()
     val metadata = "${effective.display.artist} — ${effective.display.album}"
     val title = effective.display.title
+    val haptics = LocalRelayHaptics.current
 
     Row(
         modifier = Modifier
@@ -206,10 +211,10 @@ internal fun TrackRow(
             .heightIn(min = 72.dp)
             .background(if (active) RelayColors.Panel else RelayColors.Ink)
             .semantics { contentDescription = "Play $title by ${effective.display.artist}" }
-            .combinedClickable(role = Role.Button, onClick = onClick, onLongClick = onOptions),
+            .combinedClickable(role = Role.Button, onClick = { haptics.perform(HapticAction.SELECT_TRACK); onClick() }, onLongClick = onOptions),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Box(
+        if (RelayPresentation.showIndexRail) Box(
             modifier = Modifier
                 .width(4.dp)
                 .fillMaxHeight()
@@ -241,7 +246,7 @@ internal fun TrackRow(
                 .padding(horizontal = 12.dp, vertical = 12.dp),
         ) {
             BasicText(
-                text = title,
+                text = title.asThemedTitle(),
                 style = RelayType.Track,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
@@ -296,7 +301,7 @@ internal fun BoxScope.TrackOptionsMenu(
     ) {
         BasicText(title, style = RelayType.Track, maxLines = 1, overflow = TextOverflow.Ellipsis)
         Row(modifier = Modifier.fillMaxWidth().padding(top = 8.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            TransportAction(if (favorite) "UNSAVE" else "SAVE", "Toggle favorite", true, onFavoriteToggle, Modifier.weight(1f))
+            TransportAction(if (favorite) "UNSAVE" else "SAVE", "Toggle favorite", true, onFavoriteToggle, Modifier.weight(1f), HapticAction.FAVORITE)
             TransportAction("METADATA", "Edit metadata", true, onMetadata, Modifier.weight(1f))
             TransportAction("PLAYLIST", "Add to a playlist", true, onAddToPlaylist, Modifier.weight(1f))
         }

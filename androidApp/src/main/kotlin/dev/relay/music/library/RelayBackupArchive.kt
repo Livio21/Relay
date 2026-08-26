@@ -258,6 +258,7 @@ object RelayBackupArchive {
                 .put("bass", it.bassBoostStrength).put("loud", it.loudnessNormalization).put("b", it.backupSchedule)
                 .put("retention", it.backupRetention).put("e", it.autoBackupExpiryDays)
                 .put("dlLimitGb", it.downloadStorageLimitGb).put("dlAutoClean", it.downloadAutoCleanup)
+                .put("haptics", it.hapticIntensity)
                 .put("shGroup", it.shuffleGrouping).put("shSeed", it.shuffleSeed).put("shLabel", it.shuffleSeedLabel)
                 .put("shProfiles", it.shuffleProfilesJson).put("shActive", it.activeShuffleProfileId)
                 .put("themes", it.themePacksJson).put("themeActive", it.activeThemePackId)
@@ -365,6 +366,7 @@ object RelayBackupArchive {
                     autoBackupExpiryDays = it.optInt("e", 30),
                     downloadStorageLimitGb = it.optInt("dlLimitGb", 0),
                     downloadAutoCleanup = it.optBoolean("dlAutoClean", false),
+                    hapticIntensity = it.optString("haptics", "MEDIUM"),
                     trustedRepositoriesJson = it.optJSONArray("x")?.toString() ?: "[]",
                     installedExtensionsJson = it.optJSONArray("i")?.toString() ?: "[]",
                     sourceSettingsJson = it.optJSONObject("sourceSettings")?.toString() ?: "{}",
@@ -429,6 +431,7 @@ private fun RelaySettingsEntity.forSections(sections: Set<RelayBackupSection>): 
         autoBackupExpiryDays = autoBackupExpiryDays.takeIf { includeSettings } ?: defaults.autoBackupExpiryDays,
         downloadStorageLimitGb = downloadStorageLimitGb.takeIf { includeSettings } ?: defaults.downloadStorageLimitGb,
         downloadAutoCleanup = downloadAutoCleanup.takeIf { includeSettings } ?: defaults.downloadAutoCleanup,
+        hapticIntensity = hapticIntensity.takeIf { includeSettings } ?: defaults.hapticIntensity,
         trustedRepositoriesJson = trustedRepositoriesJson.takeIf { includeExtensions } ?: defaults.trustedRepositoriesJson,
         installedExtensionsJson = installedExtensionsJson.takeIf { includeExtensions } ?: defaults.installedExtensionsJson,
         sourceSettingsJson = sourceSettingsJson.takeIf { includeExtensions } ?: defaults.sourceSettingsJson,

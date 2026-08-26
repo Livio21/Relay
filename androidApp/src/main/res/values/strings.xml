@@ -1,3 +1,4 @@
 <resources>
+    <string name="app_name">Relay</string>
     <string name="album_wallpaper_description">Relay album artwork</string>
 </resources>

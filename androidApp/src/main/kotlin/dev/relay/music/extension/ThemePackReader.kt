@@ -1,5 +1,6 @@
 package dev.relay.music.extension
 
+import dev.relay.music.haptics.HapticAction
 import org.json.JSONObject
 
 /** Parses an untrusted Theme Pack JSON document into the validated data-only model. */
@@ -25,7 +26,7 @@ object ThemePackReader {
             presentation = presentation?.let {
                 it.requireOnly(
                     "libraryLayout", "playerLayout", "background", "backgroundAsset", "effects",
-                    "typography", "chrome", "icons",
+                    "typography", "chrome", "icons", "transportLayout", "showIndexRail", "haptics",
                 )
                 ThemePresentation(
                     libraryLayout = it.optString("libraryLayout", "LIST").asEnum(),
@@ -40,17 +41,20 @@ object ThemePackReader {
                         }
                     }.orEmpty(),
                     typography = it.optJSONObject("typography")?.let { typography ->
-                        typography.requireOnly("contentFont", "utilityFont")
+                        typography.requireOnly("contentFont", "utilityFont", "titleUppercase", "typeScale")
                         ThemeTypography(
                             contentFont = typography.optString("contentFont", "SANS").asEnum(),
                             utilityFont = typography.optString("utilityFont", "MONO").asEnum(),
+                            titleUppercase = typography.optBoolean("titleUppercase", false),
+                            typeScale = typography.optDouble("typeScale", 1.0).toFloat(),
                         )
                     } ?: ThemeTypography(),
                     chrome = it.optJSONObject("chrome")?.let { chrome ->
-                        chrome.requireOnly("borderWidthDp", "cornerRadiusDp", "fill", "shadow")
+                        chrome.requireOnly("borderWidthDp", "cornerRadiusDp", "buttonRadiusDp", "fill", "shadow")
                         ThemeChrome(
                             borderWidthDp = chrome.optInt("borderWidthDp", 1),
                             cornerRadiusDp = chrome.optInt("cornerRadiusDp", 0),
+                            buttonRadiusDp = chrome.optInt("buttonRadiusDp", -1),
                             fill = chrome.optString("fill", "OUTLINE").asEnum(),
                             shadow = chrome.optString("shadow", "NONE").asEnum(),
                         )
@@ -61,6 +65,15 @@ object ThemePackReader {
                             set = icons.optString("set", "TEXT").asEnum(),
                         )
                     } ?: ThemeIcons(),
+                    transportLayout = it.optString("transportLayout", "TEXT_ROW").asEnum(),
+                    showIndexRail = it.optBoolean("showIndexRail", true),
+                    haptics = it.optJSONObject("haptics")?.let { haptics ->
+                        haptics.requireOnly(*dev.relay.music.haptics.HapticAction.entries.map(HapticAction::name).toTypedArray())
+                        val actions = buildMap {
+                            haptics.keys().forEach { key -> put(key, haptics.getString(key)) }
+                        }
+                        ThemeHapticsMapping(actions)
+                    } ?: ThemeHapticsMapping(),
                 )
             } ?: ThemePresentation(),
         )
@@ -103,14 +116,20 @@ object ThemePackReader {
                 }))
                 .put("typography", JSONObject()
                     .put("contentFont", pack.presentation.typography.contentFont.name)
-                    .put("utilityFont", pack.presentation.typography.utilityFont.name))
+                    .put("utilityFont", pack.presentation.typography.utilityFont.name)
+                    .put("titleUppercase", pack.presentation.typography.titleUppercase)
+                    .put("typeScale", pack.presentation.typography.typeScale.toDouble()))
                 .put("chrome", JSONObject()
                     .put("borderWidthDp", pack.presentation.chrome.borderWidthDp)
                     .put("cornerRadiusDp", pack.presentation.chrome.cornerRadiusDp)
+                    .put("buttonRadiusDp", pack.presentation.chrome.buttonRadiusDp)
                     .put("fill", pack.presentation.chrome.fill.name)
                     .put("shadow", pack.presentation.chrome.shadow.name))
                 .put("icons", JSONObject()
-                    .put("set", pack.presentation.icons.set.name)),
+                    .put("set", pack.presentation.icons.set.name))
+                .put("transportLayout", pack.presentation.transportLayout.name)
+                .put("showIndexRail", pack.presentation.showIndexRail)
+                .put("haptics", JSONObject(pack.presentation.haptics.actions)),
         )
         .toString()
 

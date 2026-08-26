@@ -1002,6 +1002,64 @@ Optional Phase 4A remains deferred and may be scheduled after Phase 4 without ch
 
 Do not implement immersive audio, smart playlists, recommendations, yearly recaps, achievements, voice search, typo tolerance, or automatic mood recognition before the underlying library/history data exists.
 
+### Phase 10 — First public release (Android v1.0)
+
+Added 2026-08-25 as an owner-approved plan correction (permitted by §9 rule 9 when the task requests a plan change). Everything before this phase remains the historical contract; this phase defines the road to the first public release.
+
+Goal: ship a polished Android v1.0 under the project's split license, with governance documentation that makes contribution and forking easy, and a verification record proving the shipped feature set.
+
+#### Fixed release decisions
+
+Owner-approved and closed for debate:
+
+| Concern | Decision |
+|---|---|
+| Code license | PolyForm Noncommercial 1.0.0 (`LICENSE`) |
+| Docs, theme packs, artwork | CC BY-NC-SA 4.0 (`LICENSE-DOCS`) |
+| Third-party attribution | `THIRD_PARTY_NOTICES.md` |
+| Distribution v1 | GitHub Releases: signed APK + SHA-256 checksums. No stores in v1; F-Droid is impossible under an NC license, Play is deferred. |
+| Branding v1 | "Relay", application ID `dev.relay.music`. Rename guidance lives in `FORKING.md`; upstream does not rename for v1. |
+| Donations | Accepted; never gate features. Forks may accept donations; paywalled forks violate both licenses. |
+
+#### Scope freeze
+
+In scope for v1.0:
+
+- Every Android feature already marked done in `docs/HANDOFF.md`, verified on device.
+- Corrections found by audit: launcher icon and app label resources; archived tracks excluded from the library view; keyed/remembered library computation; lazy queue rendering; incremental rescan honoring source revisions; artwork blur throttling; 48dp minimum touch targets.
+- Three small feature completions: sleep timer, `.lrc` import/export, lyric offset nudge.
+- Decomposition of `MainActivity` into feature coordinators with behavior-preserving moves, plus user-visible error surfacing (`UserMessenger`) and a local-only diagnostics log.
+- Release engineering: single version source, release signing with debug fallback, CI workflow, `docs/RELEASE_CHECKLIST.md`, `CHANGELOG.md`.
+
+Out of scope until after v1.0:
+
+- Chart artwork tiles; theme-pack live preview.
+- Desktop sync/extensions parity; Windows/Linux packaging; iOS.
+- Smart queue/recommendations, folder browsing beyond the configured Relay folders, word-level karaoke timing.
+- Play Store/F-Droid distribution; R8/minification.
+- Any Phase 9 item not already implemented.
+
+#### Versioning policy
+
+- Single source of truth: `RELAY_VERSION` in `gradle.properties`.
+- `androidApp` versionName equals `RELAY_VERSION`; versionCode = `major*100000 + minor*1000 + patch*10`. Reserve the trailing digit for build metadata.
+- Desktop `packageVersion` mirrors `RELAY_VERSION`'s numeric triple.
+- Tags follow `vMAJOR.MINOR.PATCH`. `CHANGELOG.md` follows Keep a Changelog; every release entry lists verification status of the checklist.
+
+#### Workstream order
+
+1. Governance docs (licenses, README sections, AGENTS/CONTRIBUTING/FORKING/PRIVACY/CHANGELOG).
+2. Correctness/perf/accessibility fixes, then the three small features.
+3. Coordinator decomposition and error surfacing.
+4. Release engineering artifacts.
+5. Device verification matrix execution, then tag and publish per `docs/RELEASE_CHECKLIST.md`.
+
+Phase gate:
+
+- Every checklist item in `docs/RELEASE_CHECKLIST.md` passes on the physical test device against the final build.
+- LICENSE, LICENSE-DOCS, THIRD_PARTY_NOTICES, PRIVACY, CHANGELOG exist and are accurate; CI passes on the tagged commit.
+- A clean-clone build produces an installable debug APK without machine-specific state other than documented prerequisites.
+
 ## 8. Quality and safety rules
 
 - Inspect all callers before changing a shared contract.
@@ -1043,6 +1101,8 @@ For a `gpt-5.6-terra` implementation agent:
    - the next phase gate, without beginning that phase.
 
 ## 10. Definition of the first milestone
+
+**Superseded 2026-08-25:** Milestone 1 (the Phases 0–3 vertical slice below) was completed long before this amendment; `docs/HANDOFF.md` records its delivery. The active milestone is now **Release 1.0**, defined by the Phase 10 gate above and executed through `docs/RELEASE_CHECKLIST.md`. The original text is retained as history.
 
 Milestone 1 is complete only when Phases 0–3 pass their gates on a real Android device or emulator:
 

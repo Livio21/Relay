@@ -1,5 +1,7 @@
 package dev.relay.music
 
+import androidx.compose.foundation.Image
+import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -55,6 +57,7 @@ import dev.relay.music.model.OfflineDownload
 import dev.relay.music.model.Track
 import dev.relay.music.extension.RepositoryDescriptor
 import dev.relay.music.extension.ExtensionCatalogEntry
+import dev.relay.music.extension.ThemeBackground
 import dev.relay.music.extension.repositoryDescriptorUrl
 import dev.relay.music.extension.validate
 import dev.relay.music.lastfm.LastFmConnectionState
@@ -62,7 +65,10 @@ import dev.relay.music.playback.ShuffleGrouping
 import dev.relay.music.playback.MissingShuffleValue
 import dev.relay.music.playback.ShuffleProfile
 import dev.relay.music.playback.newShuffleProfile
+import dev.relay.music.haptics.HapticIntensity
 import dev.relay.music.settings.RelaySettings
+import dev.relay.music.sync.DiscoveredLanHost
+import dev.relay.music.sync.LanPairingLink
 import dev.relay.music.wallpaper.WallpaperArtworkFit
 import dev.relay.music.wallpaper.ArtworkFilter
 import dev.relay.music.wallpaper.WallpaperAnchor
@@ -145,6 +151,15 @@ internal fun SettingsScreen(
     onImportThemePack: (() -> Unit)? = null,
     onApplyThemePack: (String?) -> Unit = {},
     onRemoveThemePack: (String) -> Unit = {},
+    onImportThemeBackground: ((String) -> Unit)? = null,
+    onExportDiagnostics: (() -> Unit)? = null,
+    onEditComposition: (() -> Unit)? = null,
+    qrImage: ImageBitmap? = null,
+    discoveredHosts: List<DiscoveredLanHost> = emptyList(),
+    discoveringMode: LanPairingLink.Mode? = null,
+    onScanNetwork: (LanPairingLink.Mode) -> Unit = {},
+    onJoinDiscovered: (DiscoveredLanHost) -> Unit = {},
+    onScanPairingLink: (() -> Unit)? = null,
     submenu: SettingsSubmenu?,
     onSubmenuChange: (SettingsSubmenu?) -> Unit,
     onOpenAlbumWallpaperPicker: (() -> Unit)? = null,
@@ -178,7 +193,19 @@ internal fun SettingsScreen(
         }
         if (onSyncExport != null && onSyncImport != null) {
             SettingsAccordion("DEVICE SYNC", submenu == SettingsSubmenu.SYNC, { toggle(SettingsSubmenu.SYNC) }) {
-                SyncSettings(onSyncExport, onSyncImport, syncConflicts, onDismissSyncConflict, onUseReceivedSyncConflict, lanSync, pairedDevices, onStartLanSyncHost, onJoinLanSync, onConfirmLanSync, onCancelLanSync, onUnpairDevice, onSelectMusicTransfer, onImportMusicTransfer, onPrepareLanMusicTransfer, playTogether, onStartPlayTogetherHost, onJoinPlayTogether, onConfirmPlayTogether, onLeavePlayTogether, onResyncPlayTogether)
+                SyncSettings(
+                    onSyncExport, onSyncImport, syncConflicts, onDismissSyncConflict, onUseReceivedSyncConflict,
+                    lanSync, pairedDevices,
+                    onStartLanSyncHost, onJoinLanSync, onConfirmLanSync, onCancelLanSync, onUnpairDevice,
+                    onSelectMusicTransfer, onImportMusicTransfer, onPrepareLanMusicTransfer,
+                    playTogether, onStartPlayTogetherHost, onJoinPlayTogether, onConfirmPlayTogether, onLeavePlayTogether, onResyncPlayTogether,
+                    qrImage = qrImage,
+                    discoveredHosts = discoveredHosts,
+                    discoveringMode = discoveringMode,
+                    onScanNetwork = onScanNetwork,
+                    onJoinDiscovered = onJoinDiscovered,
+                    onScanPairingLink = onScanPairingLink,
+                )
             }
         }
         SettingsAccordion("SOURCE REPOSITORIES", submenu == SettingsSubmenu.REPOSITORIES, { toggle(SettingsSubmenu.REPOSITORIES) }) {
@@ -196,23 +223,91 @@ internal fun SettingsScreen(
             )
         }
         SettingsAccordion("THEME PACKS", submenu == SettingsSubmenu.THEME_PACKS, { toggle(SettingsSubmenu.THEME_PACKS) }) {
-            ThemePackSettings(settings, onImportThemePack, onApplyThemePack, onRemoveThemePack)
+            ThemePackSettings(settings, onImportThemePack, onApplyThemePack, onRemoveThemePack, onImportThemeBackground)
         }
         onOpenAlbumWallpaperPicker?.let { openPicker ->
             SettingsAccordion("WALLPAPER", submenu == SettingsSubmenu.WALLPAPER, { toggle(SettingsSubmenu.WALLPAPER) }) {
-                WallpaperSettings(settings, onWallpaperSettingsChange, openPicker)
+                WallpaperSettings(settings, onWallpaperSettingsChange, openPicker, onEditComposition)
+            }
+        }
+        SettingsAccordion("ADVANCED", submenu == SettingsSubmenu.ADVANCED, { toggle(SettingsSubmenu.ADVANCED) }) {
+            onExportDiagnostics?.let { export ->
+                TransportAction(
+                    label = "EXPORT DIAGNOSTICS",
+                    description = "Save a local log of recent notices and errors; nothing is sent anywhere",
+                    enabled = true,
+                    onClick = export,
+                    modifier = Modifier.fillMaxWidth(),
+                )
             }
         }
     }
 }
 
-internal enum class SettingsSubmenu { PLAYBACK, AUDIO, TRACKING, METADATA, STORAGE, BACKUP, SYNC, REPOSITORIES, THEME_PACKS, WALLPAPER }
+internal enum class SettingsSubmenu { PLAYBACK, AUDIO, TRACKING, METADATA, STORAGE, BACKUP, SYNC, REPOSITORIES, THEME_PACKS, WALLPAPER, ADVANCED }
 
 @Composable
 private fun SettingsAccordion(label: String, expanded: Boolean, onClick: () -> Unit, content: @Composable () -> Unit) {
     SettingsMenuItem(label, expanded, onClick)
     AnimatedVisibility(visible = expanded, enter = expandVertically(), exit = shrinkVertically()) {
         Column(modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp)) { content() }
+    }
+}
+
+/** Scan-network toggle plus the tappable list of discovered Relay sessions for one mode. */
+@Composable
+private fun LanDiscoveryControls(
+    mode: LanPairingLink.Mode,
+    discoveringMode: LanPairingLink.Mode?,
+    discoveredHosts: List<DiscoveredLanHost>,
+    canScanQr: Boolean,
+    onScanNetwork: (LanPairingLink.Mode) -> Unit,
+    onJoinDiscovered: (DiscoveredLanHost) -> Unit,
+    onScanPairingLink: (() -> Unit)?,
+) {
+    val browsingHere = discoveringMode == mode
+    Row(modifier = Modifier.fillMaxWidth().padding(top = 8.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        TransportAction(
+            label = if (browsingHere) "STOP SCANNING" else "SCAN NETWORK",
+            description = if (browsingHere) {
+                "Stop looking for Relay sessions on this network"
+            } else {
+                "Look for Relay ${if (mode == LanPairingLink.Mode.SYNC) "sync" else "play-together"} sessions on this network"
+            },
+            enabled = true,
+            onClick = { onScanNetwork(mode) },
+            modifier = Modifier.weight(1f),
+        )
+        if (canScanQr) {
+            TransportAction(
+                label = "SCAN QR",
+                description = "Scan the other device's pairing QR code",
+                enabled = true,
+                onClick = { onScanPairingLink?.invoke() },
+                modifier = Modifier.weight(1f),
+            )
+        }
+    }
+    if (discoveringMode != null && !browsingHere && discoveredHosts.isNotEmpty()) return
+    if (browsingHere) {
+        BasicText("LOOKING FOR DEVICES…", style = RelayType.Utility.copy(color = RelayColors.Muted), modifier = Modifier.padding(top = 6.dp))
+        val visible = discoveredHosts.filter { it.mode == mode }
+        if (visible.isEmpty()) return
+        visible.forEach { host ->
+            Row(modifier = Modifier.fillMaxWidth().padding(top = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+                Column(modifier = Modifier.weight(1f)) {
+                    BasicText(host.name, style = RelayType.Track, maxLines = 1)
+                    BasicText("${host.host}:${host.port}", style = RelayType.Utility.copy(color = RelayColors.Muted), maxLines = 1)
+                }
+                TransportAction(
+                    label = "JOIN",
+                    description = "Connect to ${host.name} at ${host.host}:${host.port}",
+                    enabled = true,
+                    onClick = { onJoinDiscovered(host) },
+                    modifier = Modifier.width(96.dp),
+                )
+            }
+        }
     }
 }
 
@@ -410,6 +505,15 @@ internal fun AudioSettings(settings: RelaySettings, onAudioSettingsChange: ((Rel
         BasicText("Relay applies these effects to its own playback session.", style = RelayType.Metadata)
         onAudioSettingsChange?.let { onChange ->
             SettingsChoice(
+                "HAPTICS",
+                settings.hapticIntensity.name,
+                "Set the strength of interaction feedback",
+            ) {
+                val values = HapticIntensity.entries
+                val next = values[(values.indexOf(settings.hapticIntensity) + 1) % values.size]
+                onChange(settings.copy(hapticIntensity = next))
+            }
+            SettingsChoice(
                 "EQUALIZER",
                 if (settings.equalizerEnabled) "ON" else "OFF",
                 "Toggle equalizer",
@@ -505,7 +609,7 @@ internal fun EqualizerBandSlider(
         Box(
             modifier = Modifier
                 .padding(top = 8.dp)
-                .width(44.dp)
+                .width(48.dp)
                 .height(160.dp)
                 .border(1.dp, RelayColors.Line)
                 .onSizeChanged { heightPx = it.height }
@@ -712,20 +816,16 @@ private fun WallpaperSettings(
     settings: RelaySettings,
     onSettingsChange: ((RelaySettings) -> Unit)?,
     onOpenPicker: () -> Unit,
+    onEditComposition: (() -> Unit)? = null,
 ) {
-    var selectedElementLabel by remember { mutableStateOf(settings.wallpaperPreset.elements.firstOrNull()?.label ?: "ARTWORK") }
     var selectedFilterLabel by remember { mutableStateOf(settings.wallpaperPreset.filters.firstOrNull()?.label ?: "GRAYSCALE") }
     var picker by remember { mutableStateOf<WallpaperPickerRequest?>(null) }
     val preset = settings.wallpaperPreset
-    val selectedElement = preset.elements.firstOrNull { it.label == selectedElementLabel }
     val selectedFilter = preset.filters.firstOrNull { it.label == selectedFilterLabel }
     fun save(updated: WallpaperPreset) = onSettingsChange?.invoke(settings.copy(wallpaperPreset = updated))
     fun choose(title: String, values: List<String>, selected: Int, onSelect: (Int) -> Unit) {
         picker = WallpaperPickerRequest(title, values, selected) { index -> onSelect(index); picker = null }
     }
-    fun replaceSelected(element: WallpaperElement) = save(preset.copy(elements = preset.elements.map {
-        if (it.label == selectedElementLabel) element else it
-    }))
     fun replaceSelectedFilter(filter: ArtworkFilter) = save(preset.copy(filters = preset.filters.map {
         if (it.label == selectedFilterLabel) filter else it
     }))
@@ -795,66 +895,16 @@ private fun WallpaperSettings(
                 save(preset.copy(batterySaver = !preset.batterySaver))
             }
 
-            BasicText("ELEMENTS", style = RelayType.Track, modifier = Modifier.padding(top = 20.dp, bottom = 8.dp))
-            if (preset.elements.isNotEmpty()) {
-                SettingsChoice("ELEMENT", selectedElement?.label ?: preset.elements.first().label, "Choose an element to edit") {
-                    choose("WALLPAPER ELEMENT", preset.elements.map(WallpaperElement::label), preset.elements.indexOf(selectedElement).coerceAtLeast(0)) {
-                        selectedElementLabel = preset.elements[it].label
-                    }
-                }
+            onEditComposition?.let { edit ->
+                BasicText("ELEMENTS", style = RelayType.Track, modifier = Modifier.padding(top = 20.dp, bottom = 8.dp))
+                TransportAction(
+                    label = "EDIT COMPOSITION",
+                    description = "Open the wallpaper editor: drag elements to move and resize them",
+                    enabled = true,
+                    onClick = edit,
+                    modifier = Modifier.fillMaxWidth(),
+                )
             }
-            selectedElement?.let { element ->
-                val layout = element.layout
-                @Composable fun percentPicker(label: String, value: Float, values: List<Int>, update: (Float) -> Unit) {
-                    SettingsChoice(label, "${(value * 100).roundToInt()}%", "Set $label for ${element.label}") {
-                        choose(label, values.map { "$it%" }, values.indexOf((value * 100).roundToInt()).coerceAtLeast(0)) { update(values[it] / 100f) }
-                    }
-                }
-                percentPicker("X", layout.x, NORMALIZED_STEPS) { replaceSelected(element.withLayout(layout.copy(x = it))) }
-                percentPicker("Y", layout.y, NORMALIZED_STEPS) { replaceSelected(element.withLayout(layout.copy(y = it))) }
-                percentPicker("WIDTH", layout.width, SIZE_STEPS) { replaceSelected(element.withLayout(layout.copy(width = it))) }
-                percentPicker("HEIGHT", layout.height, HEIGHT_STEPS) { replaceSelected(element.withLayout(layout.copy(height = it))) }
-                percentPicker("OPACITY", layout.opacity, NORMALIZED_STEPS) { replaceSelected(element.withLayout(layout.copy(opacity = it))) }
-                SettingsChoice("ANCHOR", layout.anchor.name.replace('_', ' '), "Set anchor for ${element.label}") {
-                    val values = WallpaperAnchor.entries
-                    choose("ANCHOR", values.map { it.name.replace('_', ' ') }, values.indexOf(layout.anchor)) { replaceSelected(element.withLayout(layout.copy(anchor = values[it]))) }
-                }
-                SettingsChoice("VISIBLE ON", layout.visibility.name, "Set visibility for ${element.label}") {
-                    val values = WallpaperVisibility.entries
-                    choose("VISIBLE ON", values.map(WallpaperVisibility::name), values.indexOf(layout.visibility)) { replaceSelected(element.withLayout(layout.copy(visibility = values[it]))) }
-                }
-                if (element !is WallpaperElement.Artwork && element !is WallpaperElement.Progress) {
-                    SettingsChoice("FONT", layout.font.name, "Set font for ${element.label}") {
-                        val values = WallpaperFont.entries
-                        choose("FONT", values.map(WallpaperFont::name), values.indexOf(layout.font)) { replaceSelected(element.withLayout(layout.copy(font = values[it]))) }
-                    }
-                    SettingsChoice("ALIGN", layout.alignment.name, "Set text alignment for ${element.label}") {
-                        val values = WallpaperTextAlignment.entries
-                        choose("ALIGN", values.map(WallpaperTextAlignment::name), values.indexOf(layout.alignment)) { replaceSelected(element.withLayout(layout.copy(alignment = values[it]))) }
-                    }
-                }
-                val index = preset.elements.indexOf(element)
-                Row(Modifier.fillMaxWidth().padding(top = 4.dp), horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                    TransportAction("BACK", "Move ${element.label} behind", index > 0, {
-                        save(preset.copy(elements = preset.elements.swap(index, index - 1)))
-                    }, Modifier.weight(1f))
-                    TransportAction("FRONT", "Move ${element.label} forward", index < preset.elements.lastIndex, {
-                        save(preset.copy(elements = preset.elements.swap(index, index + 1)))
-                    }, Modifier.weight(1f))
-                    TransportAction("REMOVE", "Remove ${element.label}", true, {
-                        val remaining = preset.elements.filterNot { it.label == element.label }
-                        selectedElementLabel = remaining.firstOrNull()?.label ?: "ARTWORK"
-                        save(preset.copy(elements = remaining))
-                    }, Modifier.weight(1f))
-                }
-            }
-            val missingElements = WALLPAPER_ELEMENT_LABELS.filter { label -> preset.elements.none { it.label == label } }
-            TransportAction("ADD ELEMENT", "Add a wallpaper composition element", missingElements.isNotEmpty(), {
-                choose("ADD ELEMENT", missingElements, -1) { index ->
-                    selectedElementLabel = missingElements[index]
-                    save(preset.copy(elements = preset.elements + defaultWallpaperElement(missingElements[index])))
-                }
-            }, Modifier.fillMaxWidth().padding(top = 8.dp))
 
             BasicText("FILTERS", style = RelayType.Track, modifier = Modifier.padding(top = 20.dp, bottom = 8.dp))
             if (preset.filters.isNotEmpty()) {
@@ -927,7 +977,6 @@ private fun WallpaperSettings(
                 save(preset.copy(soundReactive = !preset.soundReactive))
             }
             TransportAction("RESET PRESET", "Reset wallpaper composition and filters", true, {
-                selectedElementLabel = "ARTWORK"
                 selectedFilterLabel = "GRAYSCALE"
                 save(WallpaperPreset())
             }, Modifier.fillMaxWidth().padding(top = 12.dp))
@@ -1037,6 +1086,12 @@ private fun SyncSettings(
     onConfirmPlayTogether: (Boolean) -> Unit,
     onLeavePlayTogether: () -> Unit,
     onResyncPlayTogether: () -> Unit,
+    qrImage: ImageBitmap? = null,
+    discoveredHosts: List<DiscoveredLanHost> = emptyList(),
+    discoveringMode: LanPairingLink.Mode? = null,
+    onScanNetwork: (LanPairingLink.Mode) -> Unit = {},
+    onJoinDiscovered: (DiscoveredLanHost) -> Unit = {},
+    onScanPairingLink: (() -> Unit)? = null,
 ) {
     var address by remember { mutableStateOf("") }
     var playTogetherAddress by remember { mutableStateOf("") }
@@ -1053,7 +1108,21 @@ private fun SyncSettings(
             "Both devices must confirm the same six-digit code. This transfers only Relay data; music and playback stay separate.",
             style = RelayType.Metadata,
         )
-        lanSync.hostAddress?.let { BasicText("HOST AT $it", style = RelayType.Utility.copy(color = RelayColors.Signal), modifier = Modifier.padding(top = 8.dp)) }
+        lanSync.hostAddress?.let {
+            BasicText("HOST AT $it", style = RelayType.Utility.copy(color = RelayColors.Signal), modifier = Modifier.padding(top = 8.dp))
+            qrImage?.let { bitmap ->
+                Image(
+                    bitmap = bitmap,
+                    contentDescription = "Pairing QR code; scan it with the other device's SCAN QR button",
+                    modifier = Modifier
+                        .padding(top = 8.dp)
+                        .size(220.dp)
+                        .border(1.dp, RelayColors.Line)
+                        .padding(4.dp),
+                )
+                BasicText("Or scan this code from the other device.", style = RelayType.Metadata, modifier = Modifier.padding(top = 4.dp))
+            }
+        }
         lanSync.message?.let { BasicText(it, style = RelayType.Metadata, modifier = Modifier.padding(top = 8.dp)) }
         lanSync.warning?.let { BasicText("NOTE · $it", style = RelayType.Metadata, modifier = Modifier.padding(top = 4.dp)) }
         if (!lanSync.active && !lanSync.awaitingConfirmation) {
@@ -1067,6 +1136,15 @@ private fun SyncSettings(
                     .semantics { contentDescription = "LAN sync host address and port" },
             )
             TransportAction("JOIN LAN SYNC", "Join an encrypted LAN sync host", address.isNotBlank(), { onJoinLanSync(address) }, Modifier.fillMaxWidth().padding(top = 8.dp))
+            LanDiscoveryControls(
+                mode = LanPairingLink.Mode.SYNC,
+                discoveringMode = discoveringMode,
+                discoveredHosts = discoveredHosts,
+                canScanQr = onScanPairingLink != null,
+                onScanNetwork = onScanNetwork,
+                onJoinDiscovered = onJoinDiscovered,
+                onScanPairingLink = onScanPairingLink,
+            )
         }
         if (lanSync.awaitingConfirmation) {
             BasicText("VERIFY CODE · ${lanSync.pairingCode}", style = RelayType.Title, modifier = Modifier.padding(top = 12.dp))
@@ -1103,6 +1181,15 @@ private fun SyncSettings(
         playTogether.driftMs?.let { BasicText("LAST DRIFT ${it}MS", style = RelayType.Utility, modifier = Modifier.padding(top = 4.dp)) }
         if (!playTogether.active && !playTogether.awaitingConfirmation) {
             TransportAction("HOST PLAY TOGETHER", "Host one foreground synchronized-playback session", true, onStartPlayTogetherHost, Modifier.fillMaxWidth().padding(top = 8.dp))
+            LanDiscoveryControls(
+                mode = LanPairingLink.Mode.PLAY,
+                discoveringMode = discoveringMode,
+                discoveredHosts = discoveredHosts,
+                canScanQr = onScanPairingLink != null,
+                onScanNetwork = onScanNetwork,
+                onJoinDiscovered = onJoinDiscovered,
+                onScanPairingLink = onScanPairingLink,
+            )
             BasicTextField(
                 value = playTogetherAddress,
                 onValueChange = { playTogetherAddress = it.take(128) },
@@ -1525,6 +1612,7 @@ internal fun ThemePackSettings(
     onImportThemePack: (() -> Unit)?,
     onApplyThemePack: (String?) -> Unit,
     onRemoveThemePack: (String) -> Unit,
+    onImportThemeBackground: ((String) -> Unit)? = null,
 ) {
     Column {
         BasicText("THEME PACKS", style = RelayType.Track, modifier = Modifier.padding(bottom = 8.dp))
@@ -1591,6 +1679,15 @@ internal fun ThemePackSettings(
                         onClick = { onApplyThemePack(pack.id) },
                         modifier = Modifier.weight(1f),
                     )
+                    if (!builtIn && onImportThemeBackground != null) {
+                        TransportAction(
+                            label = if (pack.presentation.background == ThemeBackground.ASSET) "REPLACE IMAGE" else "BACKGROUND IMAGE",
+                            description = "Choose a background image for theme ${pack.name}; it stays in Relay storage",
+                            enabled = true,
+                            onClick = { onImportThemeBackground(pack.id) },
+                            modifier = Modifier.weight(1f),
+                        )
+                    }
                     if (!builtIn) {
                         TransportAction(
                             label = "REMOVE",

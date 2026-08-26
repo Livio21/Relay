@@ -2,13 +2,14 @@ package dev.relay.music
 
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.text.BasicText
-import androidx.compose.foundation.verticalScroll
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -39,7 +40,6 @@ internal fun QueueScreen(
     Column(
         modifier = Modifier
             .fillMaxSize()
-            .verticalScroll(rememberScrollState())
             .padding(16.dp),
     ) {
         BasicText("QUEUE", style = RelayType.Title)
@@ -112,18 +112,24 @@ internal fun QueueScreen(
                 modifier = Modifier.padding(top = 16.dp),
             )
         }
-        queue.forEachIndexed { index, track ->
-            TrackOrderRow(
-                index = index,
-                track = track,
-                active = index == playbackState.currentIndex,
-                editing = editing,
-                isFirst = index == 0,
-                isLast = index == queue.lastIndex,
-                onPlay = { onPlayIndex(index) },
-                onRemove = { onRemoveIndex(index) },
-                onMove = { delta -> onMoveIndex(index, delta) },
-            )
+        // Lazy with stable keys: long queues reuse rows instead of composing them all.
+        LazyColumn(
+            modifier = Modifier.fillMaxWidth().weight(1f),
+            contentPadding = PaddingValues(bottom = 16.dp),
+        ) {
+            itemsIndexed(queue, key = { index, track -> "$index-${track.sourceId}-${track.id}" }) { index, track ->
+                TrackOrderRow(
+                    index = index,
+                    track = track,
+                    active = index == playbackState.currentIndex,
+                    editing = editing,
+                    isFirst = index == 0,
+                    isLast = index == queue.lastIndex,
+                    onPlay = { onPlayIndex(index) },
+                    onRemove = { onRemoveIndex(index) },
+                    onMove = { delta -> onMoveIndex(index, delta) },
+                )
+            }
         }
     }
 }

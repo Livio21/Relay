@@ -24,7 +24,10 @@ import kotlin.test.assertTrue
 class BuiltInThemePacksTest {
     @Test
     fun bundledThemesAreValidAndCannotBeOverridden() {
-        assertEquals(setOf("relay.theme.material3", "relay.theme.zune"), builtInThemePacks.map { it.id }.toSet())
+        assertEquals(
+            setOf("relay.theme.material3", "relay.theme.zune", "relay.theme.ipod-classic"),
+            builtInThemePacks.map { it.id }.toSet(),
+        )
         assertTrue(builtInThemePacks.all { it.validate() == null })
         val replacement = ThemePack(
             id = "relay.theme.zune",

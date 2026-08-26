@@ -8,13 +8,13 @@ import android.content.Context
 import android.app.PendingIntent
 import android.app.AlertDialog
 import android.app.WallpaperManager
+import android.net.Uri
 import android.content.ComponentName
 import android.content.pm.PackageInstaller
 import android.content.pm.PackageManager
 import android.os.Build
 import android.os.Bundle
 import android.os.SystemClock
-import android.util.AtomicFile
 import android.os.PowerManager
 import android.net.ConnectivityManager
 import android.provider.Settings
@@ -30,16 +30,21 @@ import androidx.activity.ComponentActivity
 import androidx.activity.SystemBarStyle
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.setContent
+import androidx.compose.ui.graphics.ImageBitmap
+import com.journeyapps.barcodescanner.ScanContract
+import com.journeyapps.barcodescanner.ScanOptions
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.core.net.toUri
 import androidx.documentfile.provider.DocumentFile
 import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import dev.relay.music.library.LocalMusicSource
+import dev.relay.music.library.DownloadsController
 import dev.relay.music.library.FavoriteTrackEntity
 import dev.relay.music.library.ListeningHistoryEntity
 import dev.relay.music.library.QueueEntryEntity
@@ -59,6 +64,7 @@ import dev.relay.music.library.RemoteTrackDownloadResult
 import dev.relay.music.library.OfflineDownloadEntity
 import dev.relay.music.library.PlaylistEntryEntity
 import dev.relay.music.library.AutomaticBackupScheduler
+import dev.relay.music.library.BackupRestoreCoordinator
 import dev.relay.music.library.AutomaticBackupFailureStore
 import dev.relay.music.library.AlbumChartSpecEntity
 import dev.relay.music.library.AlbumChartExporter
@@ -67,7 +73,12 @@ import dev.relay.music.library.LanSyncTransport
 import dev.relay.music.library.RelayMusicTransferArchive
 import dev.relay.music.library.TrackContentDigestStore
 import dev.relay.music.library.LanPlayTogetherTransport
+import dev.relay.music.sync.DiscoveredLanHost
+import dev.relay.music.sync.LanAdvertiser
+import dev.relay.music.sync.LanBrowser
+import dev.relay.music.sync.LanPairingLink
 import dev.relay.music.sync.PlayTogetherCommand
+import dev.relay.music.sync.generateLanQr
 import dev.relay.music.sync.PlayTogetherCoordinator
 import dev.relay.music.sync.PlayTogetherApplyResult
 import dev.relay.music.wallpaper.AlbumWallpaperService
@@ -75,11 +86,19 @@ import dev.relay.music.lastfm.LastFmApi
 import dev.relay.music.lastfm.LastFmConnectionState
 import dev.relay.music.lastfm.LastFmResult
 import dev.relay.music.lastfm.LastFmHistoryTrack
+import dev.relay.music.lastfm.LastFmAccountController
 import dev.relay.music.lastfm.SessionKeyStore
+import dev.relay.music.lastfm.asListeningEvent
+import dev.relay.music.haptics.LocalRelayHaptics
+import dev.relay.music.haptics.resolveHaptic
 import dev.relay.music.metadata.MetadataRepairCoordinator
+import dev.relay.music.platform.AndroidHaptics
+import dev.relay.music.platform.DiagnosticsLog
+import dev.relay.music.platform.UserMessenger
 import dev.relay.music.metadata.MusicBrainzApi
 import dev.relay.music.metadata.AppleSearchApi
 import dev.relay.music.lyrics.LyricsApi
+import dev.relay.music.lyrics.LyricsController
 import dev.relay.music.library.TrackLyricsEntity
 import dev.relay.music.library.TrackFlagsEntity
 import dev.relay.music.model.MetadataCandidate
@@ -90,6 +109,9 @@ import dev.relay.music.model.MetadataOverride
 import dev.relay.music.model.offlineDownloadsToEvict
 import dev.relay.music.extension.RepositoryDescriptor
 import dev.relay.music.extension.ExtensionCatalogEntry
+import dev.relay.music.extension.ThemeAssetStore
+import dev.relay.music.extension.ThemeBackground
+import dev.relay.music.extension.ExtensionInstallCoordinator
 import dev.relay.music.extension.RepositoryCatalogClient
 import dev.relay.music.extension.CatalogRefreshResult
 import dev.relay.music.extension.RepositoryDescriptorClient
@@ -129,6 +151,7 @@ import dev.relay.music.model.effectiveFingerprint
 import dev.relay.music.model.newListeningEventsForImport
 import dev.relay.music.model.OfflineDownload
 import dev.relay.music.model.Playlist
+import dev.relay.music.model.SleepTimer
 import dev.relay.music.model.withMetadataOverride
 import dev.relay.music.settings.RelaySettings
 import dev.relay.music.settings.activeShuffleProfile
@@ -138,6 +161,7 @@ import dev.relay.music.update.ComponentIdentity
 import dev.relay.music.update.InstalledComponent
 import dev.relay.music.update.findComponentUpdates
 import dev.relay.music.playback.AndroidPlayerEngine
+import dev.relay.music.playback.SleepTimerController
 import dev.relay.music.playback.QueueEdit
 import dev.relay.music.playback.appendToQueue
 import dev.relay.music.playback.moveInQueue
@@ -149,6 +173,7 @@ import dev.relay.music.playback.PlaybackService
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.MainScope
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -171,6 +196,15 @@ class MainActivity : ComponentActivity() {
     private val playerEngine by lazy { AndroidPlayerEngine(this) }
     private val lastFmApi by lazy { LastFmApi(BuildConfig.LASTFM_API_KEY, BuildConfig.LASTFM_SHARED_SECRET) }
     private val sessionKeyStore by lazy { SessionKeyStore(this) }
+    private val lastFmAccount by lazy {
+        LastFmAccountController(
+            scope = activityScope,
+            api = lastFmApi,
+            sessionKeyStore = sessionKeyStore,
+            dao = userLibraryDao,
+            openAuthorizationPage = { url -> runCatching { startActivity(Intent(Intent.ACTION_VIEW, url.toUri())) }.isSuccess },
+        )
+    }
     private val musicBrainzApi by lazy { MusicBrainzApi() }
     private val appleSearchApi by lazy { AppleSearchApi() }
     private val lyricsApi by lazy { LyricsApi() }
@@ -192,10 +226,7 @@ class MainActivity : ComponentActivity() {
     private var sourceSearchJob: Job? = null
     private var tracks by mutableStateOf(emptyList<Track>())
     private var libraryState by mutableStateOf<LibraryUiState>(LibraryUiState.StorageRequired)
-    private var lastFmConnectionState by mutableStateOf(LastFmConnectionState.SETUP_REQUIRED)
-    private var lastFmErrorMessage by mutableStateOf<String?>(null)
     private var lastFmSessionObserver: AutoCloseable? = null
-    private var authorizationToken: String? = null
     private var favoriteTrackKeys by mutableStateOf(emptySet<String>())
     private var trackFlags by mutableStateOf(emptyMap<String, TrackFlags>())
     private var relaySettings by mutableStateOf(RelaySettings())
@@ -211,7 +242,6 @@ class MainActivity : ComponentActivity() {
     private var extensionSourceResults by mutableStateOf(emptyList<ExtensionSourceResults>())
     private var extensionSourceMessage by mutableStateOf<String?>(null)
     private var sourceSettingSchemas by mutableStateOf<Map<String, List<SourceSettingDefinition>>>(emptyMap())
-    private var extensionDownload by mutableStateOf<ExtensionDownloadProgress?>(null)
     private var remoteTrackDownload by mutableStateOf<RemoteTrackDownloadProgress?>(null)
     private var downloadedRemoteTrackKeys by mutableStateOf(emptySet<String>())
     private var offlineDownloadUris = emptyMap<String, String>()
@@ -231,13 +261,9 @@ class MainActivity : ComponentActivity() {
     private var playHistory by mutableStateOf(emptyList<ListeningHistoryEntity>())
     private var localProfile by mutableStateOf<LocalProfile?>(null)
     private var albumChartSpecs by mutableStateOf(emptyList<AlbumChartSpec>())
-    private var lastFmHistoryImportMessage by mutableStateOf<String?>(null)
     private var metadataSearchMessage by mutableStateOf<String?>(null)
     private var metadataCandidateTrackKey by mutableStateOf<String?>(null)
     private var metadataIgnoredTrackKeys by mutableStateOf(emptySet<String>())
-    private var lyricsText by mutableStateOf<String?>(null)
-    private var lyricsTrackKey by mutableStateOf<String?>(null)
-    private var lyricsMessage by mutableStateOf<String?>(null)
     private var queueRestored = false
     private var lastHistoryTrackKey: String? = null
     private var lastQueue: List<Track>? = null
@@ -245,8 +271,54 @@ class MainActivity : ComponentActivity() {
     private var lastQueueWriteElapsedMs = 0L
     private var appBackAction: (() -> Unit)? = null
     private val extensionInstallStatusAction = "$ACTION_EXTENSION_INSTALL_STATUS.${UUID.randomUUID()}"
-    private val pendingExtensionInstalls = mutableMapOf<Int, Pair<RepositoryDescriptor, ExtensionCatalogEntry>>()
+    private val backupRestore by lazy {
+        BackupRestoreCoordinator(
+            context = this,
+            scope = activityScope,
+            dao = userLibraryDao,
+            messenger = messenger,
+            onRestored = { restoredSchedule, trackersRequiringReconnect ->
+                activityScope.launch {
+                    settingsStore.load()
+                    relaySettings = settingsStore.settings.value
+                    if (trackersRequiringReconnect.isNotEmpty()) {
+                        sessionKeyStore.clear()
+                        lastFmAccount.refreshInitialState()
+                    }
+                    AutomaticBackupScheduler.update(this@MainActivity, restoredSchedule)
+                    refreshLibrary()
+                }
+            },
+        )
+    }
+    private val extensionInstallCoordinator by lazy {
+        ExtensionInstallCoordinator(
+            context = this,
+            scope = activityScope,
+            installer = extensionInstaller,
+            loader = extensionLoader,
+            artifactClient = extensionArtifactClient,
+            messenger = messenger,
+            statusAction = extensionInstallStatusAction,
+            trustedCatalogEntry = { repository, entry -> isCurrentTrustedEntry(repository, entry) },
+            persistReplaced = { updated ->
+                settingsStore.save(
+                    relaySettings.copy(
+                        installedExtensions = relaySettings.installedExtensions
+                            .filterNot { it.repositoryId == updated.repositoryId && it.extensionId == updated.extensionId } + updated,
+                    ),
+                )
+            },
+            onSourcesInvalidated = { extensionSourceResults = emptyList() },
+        )
+    }
     private var pendingExtensionUninstallPackage: String? = null
+
+    private var lanPairingQr by mutableStateOf<ImageBitmap?>(null)
+    private var discoveredLanHosts by mutableStateOf(emptyList<DiscoveredLanHost>())
+    private var discoveringLanMode by mutableStateOf<LanPairingLink.Mode?>(null)
+    private val lanAdvertiser by lazy { LanAdvertiser(this) }
+    private val lanBrowser by lazy { LanBrowser(this) { hosts -> discoveredLanHosts = hosts } }
     private var pendingShuffleSeedSalt = ""
     private var pendingBackupSections = RelayBackupSection.all
     private var pendingMusicTransferUris = emptyList<android.net.Uri>()
@@ -257,6 +329,40 @@ class MainActivity : ComponentActivity() {
         PlayTogetherCoordinator(playerEngine, ::resolvePlayTogetherTrack, activityScope)
     }
 
+    private val themeAssets by lazy { dev.relay.music.extension.ThemeAssetStore(applicationContext) }
+    private var pendingBackgroundPackId: String? = null
+
+    // Feature controllers: behavior moved out of the activity body, wired below and in onCreate.
+    private val diagnosticsLog by lazy { DiagnosticsLog() }
+    private val messenger by lazy {
+        UserMessenger(diagnosticsLog) { message, longLength ->
+            Toast.makeText(this, message, if (longLength) Toast.LENGTH_LONG else Toast.LENGTH_SHORT).show()
+        }
+    }
+    // Theme packs remap patterns per action in a later schema; the override hook is ready now.
+    private val haptics by lazy {
+        val inner = AndroidHaptics(window.decorView) { action -> resolveHaptic(action, null, relaySettings.hapticIntensity) }
+        dev.relay.music.haptics.Haptics { action ->
+            android.util.Log.d("RelayHaptics", "provider invoked: $action")
+            inner.perform(action)
+        }
+    }
+    private val sleepTimerController by lazy { SleepTimerController(playerEngine, activityScope) { it.key() } }
+    private val lyricsController by lazy {
+        LyricsController(activityScope, userLibraryDao, lyricsApi, messenger) { it.key() }
+    }
+    private val downloadsController by lazy {
+        DownloadsController(
+            context = this,
+            scope = activityScope,
+            dao = userLibraryDao,
+            currentSettings = { relaySettings },
+            modifySettings = { transform -> settingsStore.save(transform(relaySettings)) },
+            onLibraryChanged = ::refreshLibrary,
+            messenger = messenger,
+        )
+    }
+
     private val backupExportLauncher = registerForActivityResult(
         ActivityResultContracts.CreateDocument("application/zip"),
     ) { uri ->
@@ -265,12 +371,12 @@ class MainActivity : ComponentActivity() {
             val result = runCatching {
                 withContext(Dispatchers.IO) {
                     contentResolver.openOutputStream(uri)?.use {
-                        RelayBackupArchive.write(it, userLibraryDao, pendingBackupSections)
+                        backupRestore.writeTo(it, pendingBackupSections)
                     }
                         ?: error("Could not open the selected backup file.")
                 }
             }
-            Toast.makeText(this@MainActivity, if (result.isSuccess) "Backup saved." else "Backup failed.", Toast.LENGTH_SHORT).show()
+            messenger.info(if (result.isSuccess) "Backup saved." else "Backup failed.", longLength = false)
         }
     }
 
@@ -281,11 +387,11 @@ class MainActivity : ComponentActivity() {
         activityScope.launch {
             val result = runCatching {
                 withContext(Dispatchers.IO) {
-                    contentResolver.openOutputStream(uri)?.use { RelaySyncArchive.write(it, userLibraryDao) }
+                    contentResolver.openOutputStream(uri)?.use { backupRestore.writeSyncTo(it) }
                         ?: error("Could not open the selected sync file.")
                 }
             }
-            Toast.makeText(this@MainActivity, if (result.isSuccess) "Sync file saved." else "Could not create sync file.", Toast.LENGTH_LONG).show()
+            messenger.info(if (result.isSuccess) "Sync file saved." else "Could not create sync file.", longLength = true)
         }
     }
 
@@ -296,7 +402,7 @@ class MainActivity : ComponentActivity() {
                 contentResolver.openOutputStream(uri)?.use { RelayMusicTransferArchive.write(this@MainActivity, pendingMusicTransferUris, it) }
                     ?: error("Could not create music transfer.")
             } }
-            Toast.makeText(this@MainActivity, if (result.isSuccess) "Music transfer saved." else "Could not create music transfer.", Toast.LENGTH_LONG).show()
+            messenger.info(if (result.isSuccess) "Music transfer saved." else "Could not create music transfer.", longLength = true)
         }
     }
     private val musicTransferSelectionLauncher = registerForActivityResult(ActivityResultContracts.OpenMultipleDocuments()) { uris ->
@@ -315,20 +421,92 @@ class MainActivity : ComponentActivity() {
                     message = if (lanMusicArchive != null) "Selected music is ready for LAN sync." else "Could not prepare selected music.",
                     preparedMusicBytes = lanMusicArchive?.length(),
                 )
-                Toast.makeText(this@MainActivity, if (lanMusicArchive != null) "Music ready for the next LAN sync." else "Could not prepare selected music.", Toast.LENGTH_LONG).show()
+                messenger.info(if (lanMusicArchive != null) "Music ready for the next LAN sync." else "Could not prepare selected music.", longLength = true)
             }
         } else musicTransferExportLauncher.launch("relay-music-${System.currentTimeMillis()}.relaymusic")
     }
     private val musicTransferImportLauncher = registerForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
         uri ?: return@registerForActivityResult
-        val root = relaySettings.storageRootUri?.toUri() ?: run { Toast.makeText(this, "Choose a Relay folder before importing music.", Toast.LENGTH_LONG).show(); return@registerForActivityResult }
+        val root = relaySettings.storageRootUri?.toUri() ?: run { messenger.info("Choose a Relay folder before importing music.", longLength = true); return@registerForActivityResult }
         activityScope.launch {
             val result = runCatching { withContext(Dispatchers.IO) {
                 contentResolver.openInputStream(uri)?.use { RelayMusicTransferArchive.read(this@MainActivity, it, root) }
                     ?: error("Could not read music transfer.")
             } }
             if (result.isSuccess) refreshLibrary()
-            Toast.makeText(this@MainActivity, result.fold({ "Imported $it music files." }, { "Music transfer is invalid or incomplete." }), Toast.LENGTH_LONG).show()
+            messenger.info(result.fold({ "Imported $it music files." }, { "Music transfer is invalid or incomplete." }), longLength = true)
+        }
+    }
+
+    private val lyricsImportLauncher = registerForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+        uri ?: return@registerForActivityResult
+        importLyricsFrom(uri)
+    }
+    private val lyricsExportLauncher = registerForActivityResult(
+        ActivityResultContracts.CreateDocument("application/lrc"),
+    ) { uri ->
+        uri ?: return@registerForActivityResult
+        exportLyricsTo(uri)
+    }
+
+    private val themeAssetLauncher = registerForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+        uri ?: return@registerForActivityResult
+        val packId = pendingBackgroundPackId ?: return@registerForActivityResult
+        activityScope.launch {
+            val result = runCatching {
+                withContext(Dispatchers.IO) {
+                    val bytes = contentResolver.openInputStream(uri)?.use { it.readBytes() }
+                        ?: error("Could not read the selected image.")
+                    themeAssets.import(packId, bytes).getOrThrow()
+                }
+            }
+            result.fold(
+                onSuccess = { token ->
+                    val updated = relaySettings.themePacks.map { pack ->
+                        if (pack.id != packId) {
+                            pack
+                        } else {
+                            pack.copy(
+                                presentation = pack.presentation.copy(
+                                    background = ThemeBackground.ASSET,
+                                    backgroundAsset = token,
+                                ),
+                            )
+                        }
+                    }
+                    settingsStore.save(relaySettings.copy(themePacks = updated))
+                    messenger.info("Theme background imported.", longLength = false)
+                },
+                onFailure = { error -> messenger.error(error.message ?: "Could not import the background image.", error) },
+            )
+        }
+    }
+
+    private val pairingScanLauncher = registerForActivityResult(ScanContract()) { result ->
+        val link = LanPairingLink.parse(result.contents)
+        if (link == null) {
+            messenger.info("That QR code is not a Relay pairing code.", longLength = true)
+        } else {
+            when (link.mode) {
+                LanPairingLink.Mode.SYNC -> joinLanSync(link.address())
+                LanPairingLink.Mode.PLAY -> joinPlayTogether(link.address())
+            }
+        }
+    }
+
+    private val diagnosticsExportLauncher = registerForActivityResult(
+        ActivityResultContracts.CreateDocument("text/plain"),
+    ) { uri ->
+        uri ?: return@registerForActivityResult
+        activityScope.launch {
+            val result = runCatching {
+                withContext(Dispatchers.IO) {
+                    contentResolver.openOutputStream(uri)?.use { output ->
+                        output.write(diagnosticsLog.snapshot().joinToString("\n").toByteArray(Charsets.UTF_8))
+                    } ?: error("Could not open the selected file.")
+                }
+            }
+            messenger.info(if (result.isSuccess) "Diagnostics exported." else "Could not export diagnostics.")
         }
     }
 
@@ -343,16 +521,16 @@ class MainActivity : ComponentActivity() {
                 }.getOrNull()?.let { json -> ThemePackReader.parse(json) }
             }
             when {
-                parsed == null -> Toast.makeText(this@MainActivity, "Could not read that theme pack file.", Toast.LENGTH_LONG).show()
-                parsed.isFailure -> Toast.makeText(this@MainActivity, parsed.exceptionOrNull()?.message ?: "Theme pack is invalid.", Toast.LENGTH_LONG).show()
+                parsed == null -> messenger.info("Could not read that theme pack file.", longLength = true)
+                parsed.isFailure -> messenger.info(parsed.exceptionOrNull()?.message ?: "Theme pack is invalid.", longLength = true)
                 else -> {
                     val pack = parsed.getOrThrow()
                     if (dev.relay.music.extension.isBuiltInThemePack(pack.id)) {
-                        Toast.makeText(this@MainActivity, "Built-in themes cannot be replaced.", Toast.LENGTH_LONG).show()
+                        messenger.info("Built-in themes cannot be replaced.", longLength = true)
                         return@launch
                     }
                     if (relaySettings.installedExtensions.any { it.kind == ExtensionKind.THEME_PACK && it.extensionId == pack.id }) {
-                        Toast.makeText(this@MainActivity, "Remove the repository-installed copy before importing this theme manually.", Toast.LENGTH_LONG).show()
+                        messenger.info("Remove the repository-installed copy before importing this theme manually.", longLength = true)
                         return@launch
                     }
                     settingsStore.save(
@@ -363,7 +541,7 @@ class MainActivity : ComponentActivity() {
                             activeThemePackId = pack.id,
                         ),
                     )
-                    Toast.makeText(this@MainActivity, "Theme \"${pack.name}\" imported and applied.", Toast.LENGTH_LONG).show()
+                    messenger.info("Theme \"${pack.name}\" imported and applied.", longLength = true)
                 }
             }
         }
@@ -382,7 +560,7 @@ class MainActivity : ComponentActivity() {
                 }.getOrNull()
             }
             if (profile == null) {
-                Toast.makeText(this@MainActivity, "Could not read that image.", Toast.LENGTH_LONG).show()
+                messenger.info("Could not read that image.", longLength = true)
                 return@launch
             }
             settingsStore.save(
@@ -396,7 +574,7 @@ class MainActivity : ComponentActivity() {
                     },
                 ),
             )
-            Toast.makeText(this@MainActivity, "Shuffle seed ${profile.seedLabel} saved. The image itself is not stored.", Toast.LENGTH_LONG).show()
+            messenger.info("Shuffle seed ${profile.seedLabel} saved. The image itself is not stored.", longLength = true)
         }
     }
 
@@ -410,7 +588,7 @@ class MainActivity : ComponentActivity() {
         val packageName = pendingExtensionUninstallPackage ?: return@registerForActivityResult
         pendingExtensionUninstallPackage = null
         if (isPackageInstalled(packageName)) {
-            Toast.makeText(this, "Extension uninstall was cancelled.", Toast.LENGTH_LONG).show()
+            messenger.info("Extension uninstall was cancelled.", longLength = true)
         } else {
             activityScope.launch {
                 settingsStore.save(
@@ -437,7 +615,7 @@ class MainActivity : ComponentActivity() {
             saveWallpaperSettings(
                 relaySettings.copy(wallpaperPreset = relaySettings.wallpaperPreset.copy(soundReactive = false)),
             )
-            Toast.makeText(this, "Sound-reactive wallpaper needs microphone permission.", Toast.LENGTH_LONG).show()
+            messenger.info("Sound-reactive wallpaper needs microphone permission.", longLength = true)
         }
     }
 
@@ -459,11 +637,10 @@ class MainActivity : ComponentActivity() {
                 }
                 AutomaticBackupScheduler.update(this@MainActivity, relaySettings.backupSchedule)
             }
-            Toast.makeText(
-                this@MainActivity,
+            messenger.info(
                 if (result.isSuccess) "Relay storage folder selected." else "Could not use that folder.",
-                Toast.LENGTH_LONG,
-            ).show()
+                longLength = true,
+            )
             if (result.isSuccess) refreshLibrary()
         }
     }
@@ -482,7 +659,7 @@ class MainActivity : ComponentActivity() {
             result.fold(
                 onSuccess = ::chooseRestoreSections,
                 onFailure = {
-                    Toast.makeText(this@MainActivity, "Backup is invalid or could not be read.", Toast.LENGTH_LONG).show()
+                    messenger.info("Backup is invalid or could not be read.", longLength = true)
                 },
             )
         }
@@ -492,47 +669,24 @@ class MainActivity : ComponentActivity() {
         ActivityResultContracts.OpenDocument(),
     ) { uri ->
         uri ?: return@registerForActivityResult
-        activityScope.launch {
-            val result = runCatching {
-                val incoming = withContext(Dispatchers.IO) {
-                    contentResolver.openInputStream(uri)?.use(RelaySyncArchive::read)
-                        ?: error("Could not open the selected sync file.")
-                }
-                withContext(Dispatchers.IO) { userLibraryDao.mergeSync(incoming) }
-            }
-            if (result.isSuccess) refreshLibrary()
-            val message = result.fold(
-                onSuccess = { merged ->
-                    "Sync merged ${merged.importedRecords} records" +
-                        if (merged.conflicts.isEmpty()) "." else "; ${merged.conflicts.size} conflicts kept local."
-                },
-                onFailure = { "Sync file is invalid or could not be merged." },
-            )
-            Toast.makeText(this@MainActivity, message, Toast.LENGTH_LONG).show()
+        contentResolver.openInputStream(uri)?.let { stream ->
+            backupRestore.mergeSyncFrom(stream) { refreshLibrary() }
         }
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        dev.relay.music.ui.RelayPresentation.assetResolver = { packId, token -> themeAssets.resolve(packId, token) }
         enableEdgeToEdge(
             statusBarStyle = SystemBarStyle.dark(android.graphics.Color.rgb(5, 5, 5)),
             navigationBarStyle = SystemBarStyle.dark(android.graphics.Color.rgb(5, 5, 5)),
         )
         AutomaticBackupFailureStore.consume(this)?.let { message ->
-            Toast.makeText(this, message, Toast.LENGTH_LONG).show()
+            messenger.info(message, longLength = true)
         }
-        lastFmConnectionState = when {
-            !lastFmApi.isConfigured -> LastFmConnectionState.SETUP_REQUIRED
-            sessionKeyStore.read() == null -> LastFmConnectionState.DISCONNECTED
-            else -> LastFmConnectionState.CONNECTED
-        }
+        lastFmAccount.refreshInitialState()
         lastFmSessionObserver = sessionKeyStore.observeChanges {
-            runOnUiThread {
-                if (lastFmConnectionState == LastFmConnectionState.CONNECTED && sessionKeyStore.read() == null) {
-                    lastFmConnectionState = LastFmConnectionState.ERROR
-                    lastFmErrorMessage = "Your Last.fm session expired. Connect it again to continue scrobbling."
-                }
-            }
+            runOnUiThread { lastFmAccount.onSessionKeyRemoved() }
         }
         registerExtensionInstallReceiver()
         observeLibraryPersistence()
@@ -560,6 +714,7 @@ class MainActivity : ComponentActivity() {
                 }
             }
             BackHandler { appBackAction?.invoke() ?: confirmExit() }
+            CompositionLocalProvider(LocalRelayHaptics provides haptics) {
             RelayApp(
                 state = RelayAppState(
                     tracks = tracks,
@@ -574,12 +729,13 @@ class MainActivity : ComponentActivity() {
                     metadataSearchMessage = metadataSearchMessage,
                     metadataCandidateTrackKey = metadataCandidateTrackKey,
                     metadataIgnoredTrackKeys = metadataIgnoredTrackKeys,
-                    lyricsText = lyricsText,
-                    lyricsTrackKey = lyricsTrackKey,
-                    lyricsMessage = lyricsMessage,
-                    lastFmConnectionState = lastFmConnectionState,
-                    lastFmErrorMessage = lastFmErrorMessage,
-                    lastFmHistoryImportMessage = lastFmHistoryImportMessage,
+                    lyricsText = lyricsController.text,
+                    lyricsTrackKey = lyricsController.trackKey,
+                    lyricsMessage = lyricsController.message,
+                    sleepTimer = sleepTimerController.current,
+                    lastFmConnectionState = lastFmAccount.connectionState,
+                    lastFmErrorMessage = lastFmAccount.errorMessage,
+                    lastFmHistoryImportMessage = lastFmAccount.historyImportMessage,
                     repositoryCatalogs = repositoryCatalogs,
                     repositoryMessages = repositoryMessages,
                     importedRepository = importedRepository,
@@ -589,7 +745,7 @@ class MainActivity : ComponentActivity() {
                     extensionSourceResults = extensionSourceResults,
                     extensionSourceMessage = extensionSourceMessage,
                     sourceSettingSchemas = sourceSettingSchemas,
-                    extensionDownload = extensionDownload,
+                    extensionDownload = extensionInstallCoordinator.downloadProgress,
                     remoteTrackDownload = remoteTrackDownload,
                     downloadedRemoteTrackKeys = downloadedRemoteTrackKeys,
                     offlineDownloads = offlineDownloads,
@@ -597,6 +753,9 @@ class MainActivity : ComponentActivity() {
                     lanSync = lanSync,
                     pairedDevices = pairedDevices,
                     playTogether = playTogether,
+                    discoveredLanHosts = discoveredLanHosts,
+                    discoveringLanMode = discoveringLanMode,
+                    lanPairingQr = lanPairingQr,
                     localProfile = localProfile,
                     listeningEvents = listeningEvents,
                     nowEpochMs = System.currentTimeMillis(),
@@ -632,6 +791,9 @@ class MainActivity : ComponentActivity() {
                     onConfirmPlayTogether = ::confirmPlayTogether,
                     onLeavePlayTogether = ::leavePlayTogether,
                     onResyncPlayTogether = ::resyncPlayTogether,
+                    onScanNetwork = ::toggleLanDiscovery,
+                    onJoinDiscovered = ::joinDiscovered,
+                    onScanPairingLink = { scanPairingLink() },
                     onBackupScheduleChange = ::setBackupSchedule,
                     onAutoBackupExpiryChange = ::setAutoBackupExpiry,
                     onCreatePlaylist = ::createPlaylist,
@@ -646,19 +808,22 @@ class MainActivity : ComponentActivity() {
                     onSaveMetadataOverride = ::saveMetadataOverride,
                     onSearchMetadata = ::searchMetadata,
                     onMetadataReviewIgnored = ::ignoreMetadataReview,
-                    onLoadLyrics = ::loadLyrics,
-                    onSaveLyrics = ::saveLyrics,
-                    onFetchLyrics = ::fetchLyrics,
-                    onLastFmAction = ::handleLastFmAction,
-                    onImportLastFmHistory = ::importLastFmHistory,
-                    onProfileNameChange = ::saveLocalProfileName,
-                    onUnlinkLastFmHistory = ::unlinkLastFmHistory,
+                    onLoadLyrics = lyricsController::load,
+                    onSaveLyrics = lyricsController::save,
+                    onFetchLyrics = lyricsController::fetch,
+                    onSelectSleepTimer = sleepTimerController::select,
+                    onImportLyricsFile = { lyricsImportLauncher.launch(arrayOf("text/plain", "application/octet-stream")) },
+                    onExportLyricsFile = ::launchLyricsExport,
+                    onLastFmAction = lastFmAccount::handleAction,
+                    onImportLastFmHistory = lastFmAccount::importHistory,
+                    onProfileNameChange = lastFmAccount::saveProfileName,
+                    onUnlinkLastFmHistory = lastFmAccount::unlink,
                     onCreateAlbumChart = ::createAlbumChart,
                     onRemoveAlbumChart = ::removeAlbumChart,
                     onExportAlbumChart = ::exportAlbumChart,
                     onBackActionChanged = { appBackAction = it },
                     onDebugScrobble = if (
-                        BuildConfig.DEBUG && lastFmConnectionState == LastFmConnectionState.CONNECTED && playbackState.currentTrack != null
+                        BuildConfig.DEBUG && lastFmAccount.connectionState == LastFmConnectionState.CONNECTED && playbackState.currentTrack != null
                     ) ::debugScrobble else null,
                     onAddTrustedRepository = ::addTrustedRepository,
                     onImportRepository = ::importRepository,
@@ -672,11 +837,11 @@ class MainActivity : ComponentActivity() {
                     onSourceSettingsChange = ::saveSourceSettings,
                     onRefreshExtensions = { refreshAllRepositories(announceUpdates = false) },
                     onDownloadRemoteTrack = ::downloadRemoteTrack,
-                    onDeleteDownload = ::deleteDownload,
-                    onDeleteAllDownloads = ::deleteAllDownloads,
-                    onDownloadLimitChange = ::setDownloadStorageLimit,
-                    onDownloadAutoCleanupChange = ::setDownloadAutoCleanup,
-                    onEvictExceededDownloads = ::evictExceededDownloads,
+                    onDeleteDownload = downloadsController::delete,
+                    onDeleteAllDownloads = downloadsController::deleteAll,
+                    onDownloadLimitChange = downloadsController::setStorageLimit,
+                    onDownloadAutoCleanupChange = downloadsController::setAutoCleanup,
+                    onEvictExceededDownloads = downloadsController::evictExceeded,
                     onAudioSettingsChange = ::saveAudioSettings,
                     onShuffleEnabledChange = playerEngine::setShuffleEnabled,
                     onRepeatModeChange = playerEngine::setRepeatMode,
@@ -690,12 +855,15 @@ class MainActivity : ComponentActivity() {
                     onImportThemePack = { themePackLauncher.launch(arrayOf("application/json", "text/plain", "application/octet-stream")) },
                     onApplyThemePack = ::applyThemePackId,
                     onRemoveThemePack = ::removeThemePack,
+                    onImportThemeBackground = ::launchThemeBackgroundImport,
+                    onExportDiagnostics = ::launchDiagnosticsExport,
                     onOpenExternalUrl = ::openExternalUrl,
                     onPickShuffleSeed = ::pickShuffleSeed,
                     onWallpaperSettingsChange = ::saveWallpaperSettings,
                     onOpenAlbumWallpaperPicker = ::openAlbumWallpaperPicker,
                 ),
             )
+            }
         }
     }
 
@@ -711,11 +879,11 @@ class MainActivity : ComponentActivity() {
 
     private fun openExternalUrl(value: String) {
         if (!value.isSecureExternalUrl()) {
-            Toast.makeText(this, "That support link is not a valid HTTPS address.", Toast.LENGTH_LONG).show()
+            messenger.info("That support link is not a valid HTTPS address.", longLength = true)
             return
         }
         runCatching { startActivity(Intent(Intent.ACTION_VIEW, value.toUri())) }
-            .onFailure { Toast.makeText(this, "Could not open that support page.", Toast.LENGTH_LONG).show() }
+            .onFailure { messenger.info("Could not open that support page.", longLength = true) }
     }
 
     override fun onStart() {
@@ -738,7 +906,7 @@ class MainActivity : ComponentActivity() {
         if (data.scheme != "relay" || data.host != "add-repo") return
         val url = data.getQueryParameter("url")?.let(::repositoryDescriptorUrl)
         if (url == null) {
-            Toast.makeText(this, "That repository link is not a valid HTTPS address.", Toast.LENGTH_LONG).show()
+            messenger.info("That repository link is not a valid HTTPS address.", longLength = true)
             return
         }
         importRepository(url)
@@ -781,6 +949,9 @@ class MainActivity : ComponentActivity() {
         lyricsApi.close()
         playerEngine.release()
         runCatching { unregisterReceiver(extensionInstallReceiver) }
+        lanAdvertiser.unregister()
+        lanBrowser.stop()
+        lanPairingQr = null
         lastFmSessionObserver?.close()
         lastFmSessionObserver = null
         super.onDestroy()
@@ -838,11 +1009,10 @@ class MainActivity : ComponentActivity() {
                     }
                 }
                 if (!ready) {
-                    Toast.makeText(
-                        this@MainActivity,
+                    messenger.info(
                         "Relay could not repair its folder structure. Check storage access in Settings.",
-                        Toast.LENGTH_LONG,
-                    ).show()
+                        longLength = true,
+                    )
                 }
             }
             AutomaticBackupScheduler.update(this@MainActivity, settingsStore.settings.value.backupSchedule)
@@ -1013,7 +1183,7 @@ class MainActivity : ComponentActivity() {
 
     private fun addTrustedRepository(repository: RepositoryDescriptor) {
         repositoryTrustError(relaySettings.trustedRepositories, repository)?.let { error ->
-            Toast.makeText(this, error, Toast.LENGTH_LONG).show()
+            messenger.info(error, longLength = true)
             return
         }
         activityScope.launch {
@@ -1060,7 +1230,7 @@ class MainActivity : ComponentActivity() {
                 hasUpdate = refreshRepositoryNow(repository) || hasUpdate
             }
             reconcileInstalledExtensionSnapshots(disableMissing = true)
-            if (announceUpdates && hasUpdate) Toast.makeText(this@MainActivity, "Extension updates available.", Toast.LENGTH_LONG).show()
+            if (announceUpdates && hasUpdate) messenger.info("Extension updates available.", longLength = true)
         }
     }
 
@@ -1124,19 +1294,19 @@ class MainActivity : ComponentActivity() {
 
     private fun confirmExtensionInstall(repository: RepositoryDescriptor, entry: ExtensionCatalogEntry) {
         if (!isCurrentTrustedEntry(repository, entry)) {
-            Toast.makeText(this, "Refresh this trusted repository before installing.", Toast.LENGTH_LONG).show()
+            messenger.info("Refresh this trusted repository before installing.", longLength = true)
             return
         }
         if (entry.kind == ExtensionKind.THEME_PACK) {
             if (dev.relay.music.extension.isBuiltInThemePack(entry.id)) {
-                Toast.makeText(this, "Built-in themes cannot be replaced.", Toast.LENGTH_LONG).show()
+                messenger.info("Built-in themes cannot be replaced.", longLength = true)
                 return
             }
             val conflict = relaySettings.installedExtensions.firstOrNull {
                 it.kind == ExtensionKind.THEME_PACK && it.extensionId == entry.id && it.repositoryId != repository.id
             }
             if (conflict != null) {
-                Toast.makeText(this, "Remove the copy from ${conflict.repositoryId} before installing this one.", Toast.LENGTH_LONG).show()
+                messenger.info("Remove the copy from ${conflict.repositoryId} before installing this one.", longLength = true)
                 return
             }
         } else if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O && !packageManager.canRequestPackageInstalls()) {
@@ -1178,69 +1348,25 @@ class MainActivity : ComponentActivity() {
             )
             .setMessage(summary)
             .setNegativeButton("CANCEL", null)
-            .setPositiveButton(if (installed == null) "INSTALL" else "UPDATE") { _, _ -> installExtension(repository, entry) }
-            .show()
-    }
-
-    private fun installExtension(repository: RepositoryDescriptor, entry: ExtensionCatalogEntry) {
-        if (extensionDownload != null || !isCurrentTrustedEntry(repository, entry)) return
-        activityScope.launch {
-            extensionDownload = ExtensionDownloadProgress(entry.id, entry.name, 0, entry.artifactSizeBytes)
-            when (val download = extensionArtifactClient.download(entry) { downloaded, total ->
-                runOnUiThread {
-                    extensionDownload = ExtensionDownloadProgress(entry.id, entry.name, downloaded, total)
-                }
-            }) {
-                is ArtifactDownloadResult.Failure -> Toast.makeText(this@MainActivity, download.message, Toast.LENGTH_LONG).show()
-                is ArtifactDownloadResult.Success -> when (entry.kind) {
-                    ExtensionKind.THEME_PACK -> installThemePack(repository, entry, download.file)
-                    ExtensionKind.SOURCE -> when (val request = extensionInstaller.stage(entry, download.file)) {
-                        is ExtensionInstallRequest.Refused -> Toast.makeText(this@MainActivity, request.reason, Toast.LENGTH_LONG).show()
-                        is ExtensionInstallRequest.Ready -> {
-                            val statusIntent = Intent(extensionInstallStatusAction).setPackage(packageName)
-                            val flags = PendingIntent.FLAG_UPDATE_CURRENT or if (Build.VERSION.SDK_INT >= 31) PendingIntent.FLAG_MUTABLE else 0
-                            val pendingIntent = PendingIntent.getBroadcast(this@MainActivity, request.sessionId, statusIntent, flags)
-                            pendingExtensionInstalls[request.sessionId] = repository to entry
-                            extensionInstaller.commit(request.sessionId, pendingIntent.intentSender)?.let { error ->
-                                pendingExtensionInstalls.remove(request.sessionId)
-                                Toast.makeText(this@MainActivity, error, Toast.LENGTH_LONG).show()
-                            }
-                        }
-                    }
+            .setPositiveButton(if (installed == null) "INSTALL" else "UPDATE") { _, _ ->
+                extensionInstallCoordinator.downloadAndStage(repository, entry) { file ->
+                    activityScope.launch { installThemePack(repository, entry, file) }
                 }
             }
-            extensionDownload = null
-        }
+            .show()
     }
 
     private fun setExtensionEnabled(installed: InstalledExtension, enabled: Boolean) {
         if (installed.kind != ExtensionKind.SOURCE) return
         activityScope.launch {
-            val updated = if (enabled) {
-                val entry = installed.resolvedCatalogEntry(repositoryCatalogs[installed.repositoryId].orEmpty())
-                if (entry == null) {
-                    installed.disabled("Trusted install details are unavailable. Refresh its repository or reinstall the extension.")
-                } else {
-                    val failure = extensionLoader.load(entry).exceptionOrNull()?.message
-                    installed.copy(
-                        enabled = failure == null,
-                        disabledReason = failure?.take(240),
-                        catalogSnapshot = entry,
-                    )
-                }
-            } else {
-                installed.disabled("Disabled by user.")
-            }
-            settingsStore.save(
-                relaySettings.copy(
-                    installedExtensions = relaySettings.installedExtensions
-                        .filterNot { it.repositoryId == updated.repositoryId && it.extensionId == updated.extensionId } + updated,
-                ),
+            val updated = extensionInstallCoordinator.setEnabled(
+                installed,
+                enabled,
+                repositoryCatalogs[installed.repositoryId].orEmpty(),
             )
-            extensionSourceResults = emptyList()
             extensionSourceMessage = if (updated.enabled) "Extension enabled." else "Extension disabled."
             if (enabled && !updated.enabled) {
-                Toast.makeText(this@MainActivity, "Extension could not be enabled: ${updated.disabledReason}", Toast.LENGTH_LONG).show()
+                messenger.error("Extension could not be enabled: ${updated.disabledReason}")
             }
         }
     }
@@ -1275,52 +1401,7 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun handleExtensionInstallStatus(intent: Intent) {
-        val sessionId = intent.getIntExtra(PackageInstaller.EXTRA_SESSION_ID, -1)
-        val pending = pendingExtensionInstalls[sessionId] ?: return
-        when (intent.getIntExtra(PackageInstaller.EXTRA_STATUS, PackageInstaller.STATUS_FAILURE)) {
-            PackageInstaller.STATUS_PENDING_USER_ACTION -> {
-                val confirmation = if (Build.VERSION.SDK_INT >= 33) {
-                    intent.getParcelableExtra(Intent.EXTRA_INTENT, Intent::class.java)
-                } else {
-                    @Suppress("DEPRECATION")
-                    intent.getParcelableExtra(Intent.EXTRA_INTENT)
-                }
-                confirmation?.let(extensionInstallLauncher::launch)
-                    ?: Toast.makeText(this, "Android installer did not provide a confirmation action.", Toast.LENGTH_LONG).show()
-            }
-            PackageInstaller.STATUS_SUCCESS -> {
-                pendingExtensionInstalls.remove(sessionId)
-                enableInstalledExtension(pending)
-            }
-            else -> {
-                pendingExtensionInstalls.remove(sessionId)
-                Toast.makeText(this, intent.getStringExtra(PackageInstaller.EXTRA_STATUS_MESSAGE) ?: "Extension installation was cancelled.", Toast.LENGTH_LONG).show()
-            }
-        }
-    }
-
-    private fun enableInstalledExtension(pending: Pair<RepositoryDescriptor, ExtensionCatalogEntry>) {
-        activityScope.launch {
-            val result = extensionLoader.load(pending.second)
-            val failureMessage = result.exceptionOrNull()?.message
-            val disabledReason = when {
-                failureMessage != null -> failureMessage.take(240)
-                result.isFailure -> "Extension verification failed."
-                else -> null
-            }
-            val installed = pending.second.asInstalled(pending.first.id, disabledReason)
-            settingsStore.save(
-                relaySettings.copy(
-                    installedExtensions = relaySettings.installedExtensions
-                        .filterNot { it.repositoryId == installed.repositoryId && it.extensionId == installed.extensionId } + installed,
-                ),
-            )
-            Toast.makeText(
-                this@MainActivity,
-                if (result.isSuccess) "Extension installed and enabled." else "Extension was installed but not enabled: ${result.exceptionOrNull()?.message ?: "verification failed."}",
-                Toast.LENGTH_LONG,
-            ).show()
-        }
+        extensionInstallCoordinator.handleStatus(intent)?.let(extensionInstallLauncher::launch)
     }
 
     private suspend fun installThemePack(repository: RepositoryDescriptor, entry: ExtensionCatalogEntry, artifact: File) {
@@ -1333,8 +1414,8 @@ class MainActivity : ComponentActivity() {
             settingsStore.save(relaySettings.withRepositoryThemePack(repository.id, entry, pack))
             pack
         }.fold(
-            onSuccess = { Toast.makeText(this, "Theme \"${it.name}\" installed and applied.", Toast.LENGTH_LONG).show() },
-            onFailure = { Toast.makeText(this, it.message ?: "Theme pack installation failed.", Toast.LENGTH_LONG).show() },
+            onSuccess = { messenger.info("Theme \"${it.name}\" installed and applied.", longLength = true) },
+            onFailure = { messenger.info(it.message ?: "Theme pack installation failed.", longLength = true) },
         )
     }
 
@@ -1380,7 +1461,7 @@ class MainActivity : ComponentActivity() {
             extensionSources.preparePlayback(selected, enabledSourceEntries()).fold(
                 onSuccess = { prepared -> playerEngine.setQueue(listOf(queueableTrack(prepared) ?: prepared), 0) },
                 onFailure = { error ->
-                    Toast.makeText(this@MainActivity, error.message ?: "Could not start this track.", Toast.LENGTH_LONG).show()
+                    messenger.info(error.message ?: "Could not start this track.", longLength = true)
                 },
             )
         }
@@ -1390,14 +1471,14 @@ class MainActivity : ComponentActivity() {
         if (remoteTrackDownload != null) return
         val rootUri = relaySettings.storageRootUri?.toUri()
         if (rootUri == null) {
-            Toast.makeText(this, "Choose a Relay storage folder before downloading music.", Toast.LENGTH_LONG).show()
+            messenger.info("Choose a Relay storage folder before downloading music.", longLength = true)
             return
         }
         activityScope.launch {
             remoteTrackDownload = RemoteTrackDownloadProgress(track.sourceId, track.id, track.title, 0, 0)
             val download = extensionSources.prepareDownload(track, enabledSourceEntries()).getOrElse { error ->
                 remoteTrackDownload = null
-                Toast.makeText(this@MainActivity, error.message ?: "Could not prepare this download.", Toast.LENGTH_LONG).show()
+                messenger.info(error.message ?: "Could not prepare this download.", longLength = true)
                 return@launch
             }
             when (val result = remoteTrackDownloadClient.download(track, download.url, rootUri, download.headers) { downloaded, total ->
@@ -1427,15 +1508,15 @@ class MainActivity : ComponentActivity() {
                                 }
                             }
                     }
-                    refreshLibrary()
-                    val limitGb = relaySettings.downloadStorageLimitGb
-                    if (relaySettings.downloadAutoCleanup && limitGb > 0) {
-                        enforceDownloadStorageLimit(limitGb)
-                    }
-                    Toast.makeText(this@MainActivity, "Saved to Relay/downloads.", Toast.LENGTH_LONG).show()
+                     refreshLibrary()
+                     val limitGb = relaySettings.downloadStorageLimitGb
+                     if (relaySettings.downloadAutoCleanup && limitGb > 0) {
+                         downloadsController.enforceStorageLimit(limitGb)
+                     }
+                    messenger.info("Saved to Relay/downloads.", longLength = true)
                 }
                 is RemoteTrackDownloadResult.Failure -> {
-                    Toast.makeText(this@MainActivity, result.message, Toast.LENGTH_LONG).show()
+                    messenger.info(result.message, longLength = true)
                 }
             }
             remoteTrackDownload = null
@@ -1499,26 +1580,7 @@ class MainActivity : ComponentActivity() {
             backupExportLauncher.launch("relay-${System.currentTimeMillis()}.relaybackup")
             return
         }
-        activityScope.launch {
-            val result = runCatching {
-                withContext(Dispatchers.IO) {
-                    val document = RelayStorage.createManualBackup(
-                        this@MainActivity,
-                        rootUri,
-                        "relay-${System.currentTimeMillis()}.relaybackup",
-                    ) ?: error("Relay storage folder is unavailable.")
-                    contentResolver.openOutputStream(document.uri)?.use {
-                        RelayBackupArchive.write(it, userLibraryDao, sections)
-                    }
-                        ?: error("Could not create the backup file.")
-                }
-            }
-            Toast.makeText(
-                this@MainActivity,
-                if (result.isSuccess) "Manual backup saved in Relay/backups/manual." else "Could not save backup. Check Relay folder access in Settings.",
-                Toast.LENGTH_LONG,
-            ).show()
-        }
+        backupRestore.exportToStorage(rootUri, sections)
     }
 
     private fun chooseBackupSections(
@@ -1539,7 +1601,7 @@ class MainActivity : ComponentActivity() {
             .setNegativeButton("Cancel", null)
             .setPositiveButton("Continue") { _, _ ->
                 if (selected.isEmpty()) {
-                    Toast.makeText(this, "Select at least one section.", Toast.LENGTH_SHORT).show()
+                    messenger.info("Select at least one section.", longLength = false)
                 } else {
                     onSelected(selected.toSet())
                 }
@@ -1550,24 +1612,11 @@ class MainActivity : ComponentActivity() {
     private fun chooseRestoreSections(contents: RelayBackupContents) {
         chooseBackupSections("Restore backup", contents.sections) { selected ->
             activityScope.launch {
-                val result = runCatching {
-                    withContext(Dispatchers.IO) {
-                        val packageNames = contents.backup.settings?.installedExtensions().orEmpty()
-                            .mapNotNull { it.androidPackageName }
-                            .toSet()
-                        contents.restorePlan(
-                            selectedSections = selected,
-                            currentSettings = userLibraryDao.settingsSnapshot(),
-                            installedAndroidPackages = packageNames.filterTo(mutableSetOf(), ::isPackageInstalled),
-                        )
-                    }
-                }
-                result.fold(
-                    onSuccess = ::showRestorePlan,
-                    onFailure = {
-                        Toast.makeText(this@MainActivity, "Backup restore plan is invalid.", Toast.LENGTH_LONG).show()
-                    },
-                )
+                backupRestore.buildRestorePlan(contents, selected, ::isPackageInstalled)
+                    .fold(
+                        onSuccess = ::showRestorePlan,
+                        onFailure = { messenger.info("Backup restore plan is invalid.", longLength = true) },
+                    )
             }
         }
     }
@@ -1595,50 +1644,7 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun performRestore(plan: RelayRestorePlan) {
-        activityScope.launch {
-            val result = runCatching {
-                withContext(Dispatchers.IO) {
-                    val safetyBackup = AtomicFile(File(filesDir, "restore-safety/last.relaybackup"))
-                    safetyBackup.baseFile.parentFile?.mkdirs()
-                    val archiveBytes = ByteArrayOutputStream().also {
-                        RelayBackupArchive.write(it, userLibraryDao)
-                    }.toByteArray()
-                    val output = safetyBackup.startWrite()
-                    try {
-                        output.write(archiveBytes)
-                        safetyBackup.finishWrite(output)
-                    } catch (error: Throwable) {
-                        safetyBackup.failWrite(output)
-                        throw error
-                    }
-                    userLibraryDao.restoreUserLibrary(plan)
-                    userLibraryDao.settingsSnapshot()?.asSettings()?.backupSchedule ?: BackupSchedule.OFF
-                }
-            }
-            result.fold(
-                onSuccess = { schedule ->
-                    settingsStore.load()
-                    relaySettings = settingsStore.settings.value
-                    if (plan.trackersRequiringReconnect.isNotEmpty()) {
-                        lastFmConnectionState = LastFmConnectionState.DISCONNECTED
-                        lastFmErrorMessage = null
-                        sessionKeyStore.clear()
-                    }
-                    AutomaticBackupScheduler.update(this@MainActivity, schedule)
-                    refreshLibrary()
-                    val followUp = when {
-                        plan.missingPlugins.isNotEmpty() -> " Reinstall missing extension packages before enabling them."
-                        plan.missingRepositories.isNotEmpty() -> " Review missing extension repositories."
-                        plan.trackersRequiringReconnect.isNotEmpty() -> " Reconnect your tracker in Settings."
-                        else -> ""
-                    }
-                    Toast.makeText(this@MainActivity, "Backup restored.$followUp", Toast.LENGTH_LONG).show()
-                },
-                onFailure = {
-                    Toast.makeText(this@MainActivity, "Backup could not be restored; existing data was kept.", Toast.LENGTH_LONG).show()
-                },
-            )
-        }
+        backupRestore.performRestore(plan)
     }
 
     @Suppress("DEPRECATION")
@@ -1656,24 +1662,7 @@ class MainActivity : ComponentActivity() {
             syncExportLauncher.launch("relay-${System.currentTimeMillis()}.relaysync")
             return
         }
-        activityScope.launch {
-            val result = runCatching {
-                withContext(Dispatchers.IO) {
-                    val document = RelayStorage.createSyncBundle(
-                        this@MainActivity,
-                        rootUri,
-                        "relay-${System.currentTimeMillis()}.relaysync",
-                    ) ?: error("Relay storage folder is unavailable.")
-                    contentResolver.openOutputStream(document.uri)?.use { RelaySyncArchive.write(it, userLibraryDao) }
-                        ?: error("Could not create sync file.")
-                }
-            }
-            Toast.makeText(
-                this@MainActivity,
-                if (result.isSuccess) "Sync file saved in Relay/sync." else "Could not save sync file. Choose the Relay folder again.",
-                Toast.LENGTH_LONG,
-            ).show()
-        }
+        backupRestore.exportSyncToStorage(rootUri)
     }
 
     private fun dismissSyncConflict(id: String) {
@@ -1683,7 +1672,7 @@ class MainActivity : ComponentActivity() {
     private fun useReceivedSyncConflict(id: String) {
         activityScope.launch {
             val applied = withContext(Dispatchers.IO) { userLibraryDao.resolveSyncConflict(id, useReceived = true) }
-            Toast.makeText(this@MainActivity, if (applied) "Received value applied." else "Could not apply the received value.", Toast.LENGTH_LONG).show()
+            messenger.info(if (applied) "Received value applied." else "Could not apply the received value.", longLength = true)
         }
     }
 
@@ -1697,6 +1686,9 @@ class MainActivity : ComponentActivity() {
             val server = withContext(Dispatchers.IO) { ServerSocket(0) }
             lanSyncServer = server
             lanSync = LanSyncUiState(message = "Waiting for a device…", hostAddress = "${localLanAddress()}:${server.localPort}", active = true, preparedMusicBytes = lanMusicArchive?.length(), warning = lanSessionWarning())
+            val link = LanPairingLink(LanPairingLink.Mode.SYNC, localLanAddress(), server.localPort)
+            lanAdvertiser.register(link.mode, server.localPort, "Relay ${android.os.Build.MODEL}".trim())
+            lanPairingQr = generateLanQr(link.encode())
             runLanSync { identity, archive, incoming ->
                 LanSyncTransport.hostOnce(
                     server, identity, identity.peers(), ::awaitLanConfirmation, archive, incoming,
@@ -1704,6 +1696,8 @@ class MainActivity : ComponentActivity() {
                     onConnected = { lanSyncConnection = it },
                 )
             }
+            lanAdvertiser.unregister()
+            lanPairingQr = null
         }
     }
 
@@ -1766,7 +1760,42 @@ class MainActivity : ComponentActivity() {
         lanSyncConnection = null
         lanSyncServer?.close()
         lanSyncServer = null
+        lanAdvertiser.unregister()
+        lanPairingQr = null
         lanSync = LanSyncUiState(message = "LAN sync cancelled.")
+    }
+
+    private fun toggleLanDiscovery(mode: LanPairingLink.Mode) {
+        if (discoveringLanMode == mode) {
+            discoveringLanMode = null
+            discoveredLanHosts = emptyList()
+            lanBrowser.stop()
+        } else {
+            discoveringLanMode = mode
+            discoveredLanHosts = emptyList()
+            lanBrowser.start(mode)
+        }
+    }
+
+    private fun joinDiscovered(host: DiscoveredLanHost) {
+        val active = discoveringLanMode
+        if (active != null) toggleLanDiscovery(active)
+        val link = host.toLink()
+        when (link.mode) {
+            LanPairingLink.Mode.SYNC -> joinLanSync(link.address())
+            LanPairingLink.Mode.PLAY -> joinPlayTogether(link.address())
+        }
+    }
+
+    private fun scanPairingLink() {
+        pairingScanLauncher.launch(
+            ScanOptions().apply {
+                setDesiredBarcodeFormats(ScanOptions.QR_CODE)
+                setPrompt("Point at the other device's Relay pairing code")
+                setBeepEnabled(false)
+                setOrientationLocked(false)
+            },
+        )
     }
 
     private fun refreshPairedDevices() {
@@ -1789,6 +1818,9 @@ class MainActivity : ComponentActivity() {
             val server = withContext(Dispatchers.IO) { ServerSocket(0) }
             playTogetherServer = server
             playTogether = PlayTogetherUiState(message = "Waiting for a device…", hostAddress = "${localLanAddress()}:${server.localPort}", active = true)
+            val link = LanPairingLink(LanPairingLink.Mode.PLAY, localLanAddress(), server.localPort)
+            lanAdvertiser.register(link.mode, server.localPort, "Relay ${android.os.Build.MODEL}".trim())
+            lanPairingQr = generateLanQr(link.encode())
             val result = runCatching {
                 withContext(Dispatchers.IO) {
                     val identity = LanSyncIdentityStore(this@MainActivity)
@@ -1898,6 +1930,8 @@ class MainActivity : ComponentActivity() {
         playTogetherConnection = null
         playTogetherServer?.close()
         playTogetherServer = null
+        lanAdvertiser.unregister()
+        lanPairingQr = null
         playTogetherCoordinator.leave()
         pendingPlayTogetherResync = null
         playTogether = PlayTogetherUiState(message = "Play Together ended.")
@@ -1950,11 +1984,9 @@ class MainActivity : ComponentActivity() {
             val added = withContext(Dispatchers.IO) { userLibraryDao.appendToPlaylist(playlistId, track) }
             if (playlistTracks.containsKey(playlistId)) reloadPlaylistTracks(playlistId)
             val playlistName = playlists.firstOrNull { it.id == playlistId }?.name ?: "playlist"
-            Toast.makeText(
-                this@MainActivity,
+            messenger.info(
                 if (added) "Added to $playlistName." else "Already in $playlistName.",
-                Toast.LENGTH_SHORT,
-            ).show()
+            )
         }
     }
 
@@ -1970,7 +2002,7 @@ class MainActivity : ComponentActivity() {
                 id
             }
             if (playlistTracks.containsKey(playlistId)) reloadPlaylistTracks(playlistId)
-            Toast.makeText(this@MainActivity, "Created \"$cleanName\" and added the track.", Toast.LENGTH_SHORT).show()
+            messenger.info("Created \"$cleanName\" and added the track.", longLength = false)
         }
     }
 
@@ -2014,7 +2046,7 @@ class MainActivity : ComponentActivity() {
                 }
             }
             if (playable.isEmpty()) {
-                Toast.makeText(this@MainActivity, "None of this playlist's tracks are available.", Toast.LENGTH_LONG).show()
+                messenger.info("None of this playlist's tracks are available.", longLength = true)
                 return@launch
             }
             if (playable.size < entries.size) {
@@ -2025,105 +2057,6 @@ class MainActivity : ComponentActivity() {
                 ).show()
             }
             playerEngine.setQueue(playable, startAt)
-        }
-    }
-
-    private fun deleteDownload(sourceId: String, trackId: String) {
-        activityScope.launch {
-            val removed = withContext(Dispatchers.IO) {
-                val entity = userLibraryDao.offlineDownload(sourceId, trackId) ?: return@withContext false
-                runCatching {
-                    DocumentFile.fromSingleUri(this@MainActivity, entity.documentUri.toUri())?.delete()
-                }
-                userLibraryDao.deleteOfflineDownload(sourceId, trackId)
-                true
-            }
-            if (removed) {
-                refreshLibrary()
-                Toast.makeText(this@MainActivity, "Download removed.", Toast.LENGTH_SHORT).show()
-            }
-        }
-    }
-
-    private fun deleteAllDownloads() {
-        activityScope.launch {
-            withContext(Dispatchers.IO) {
-                userLibraryDao.offlineDownloads().first().forEach { entity ->
-                    runCatching {
-                        DocumentFile.fromSingleUri(this@MainActivity, entity.documentUri.toUri())?.delete()
-                    }
-                    userLibraryDao.deleteOfflineDownload(entity.sourceId, entity.trackId)
-                }
-            }
-            refreshLibrary()
-            Toast.makeText(this@MainActivity, "Downloads removed.", Toast.LENGTH_SHORT).show()
-        }
-    }
-
-    private fun setDownloadStorageLimit(limitGb: Int) {
-        activityScope.launch(Dispatchers.IO) {
-            settingsStore.save(relaySettings.copy(downloadStorageLimitGb = limitGb))
-            if (relaySettings.downloadAutoCleanup && limitGb > 0) {
-                enforceDownloadStorageLimit(limitGb)
-            }
-        }
-    }
-
-    private fun setDownloadAutoCleanup(enabled: Boolean) {
-        activityScope.launch(Dispatchers.IO) {
-            settingsStore.save(relaySettings.copy(downloadAutoCleanup = enabled))
-            if (enabled && relaySettings.downloadStorageLimitGb > 0) {
-                enforceDownloadStorageLimit(relaySettings.downloadStorageLimitGb)
-            }
-        }
-    }
-
-    private fun evictExceededDownloads() {
-        activityScope.launch {
-            val limitGb = relaySettings.downloadStorageLimitGb
-            if (limitGb <= 0) return@launch
-            enforceDownloadStorageLimit(limitGb)
-        }
-    }
-
-    /**
-     * Deletes oldest downloads (by [OfflineDownloadEntity.downloadedAtEpochMs]) until total
-     * storage is within [limitGb] GB. Called on limit/cleanup-toggle changes and after each
-     * new download when auto-cleanup is enabled.
-     */
-    private suspend fun enforceDownloadStorageLimit(limitGb: Int) {
-        val limitBytes = limitGb * 1024L * 1024L * 1024L
-        withContext(Dispatchers.IO) {
-            val downloads = userLibraryDao.offlineDownloads().first()
-            val byKey = downloads.associateBy { it.sourceId to it.trackId }
-            val toEvict = offlineDownloadsToEvict(
-                downloads.map {
-                    OfflineDownloadEvictionEntry(
-                        sourceId = it.sourceId,
-                        trackId = it.trackId,
-                        sizeBytes = it.sizeBytes,
-                        downloadedAtEpochMs = it.downloadedAtEpochMs,
-                    )
-                },
-                limitBytes,
-            )
-            if (toEvict.isEmpty()) return@withContext
-            for ((sourceId, trackId) in toEvict) {
-                val download = byKey[sourceId to trackId] ?: continue
-                runCatching {
-                    DocumentFile.fromSingleUri(this@MainActivity, download.documentUri.toUri())?.delete()
-                }
-                userLibraryDao.deleteOfflineDownload(sourceId, trackId)
-            }
-            refreshLibrary()
-            withContext(Dispatchers.Main) {
-                val evicted = toEvict.size
-                Toast.makeText(
-                    this@MainActivity,
-                    "Removed $evicted download${if (evicted == 1) "" else "s"} to stay within limit.",
-                    Toast.LENGTH_SHORT,
-                ).show()
-            }
         }
     }
 
@@ -2144,7 +2077,7 @@ class MainActivity : ComponentActivity() {
         val state = playerEngine.state.value
         val edit = playNextInQueue(state.queue, state.currentIndex, queueable)
         applyQueueEdit(edit, state.isPlaying || state.queue.isEmpty(), state.positionMs, keepPosition = true)
-        Toast.makeText(this, "Playing next.", Toast.LENGTH_SHORT).show()
+        messenger.info("Playing next.", longLength = false)
     }
 
     private fun enqueue(track: Track) {
@@ -2152,7 +2085,7 @@ class MainActivity : ComponentActivity() {
         val state = playerEngine.state.value
         val edit = appendToQueue(state.queue, state.currentIndex, queueable)
         applyQueueEdit(edit, state.isPlaying || state.queue.isEmpty(), state.positionMs, keepPosition = true)
-        Toast.makeText(this, "Added to queue.", Toast.LENGTH_SHORT).show()
+        messenger.info("Added to queue.", longLength = false)
     }
 
     /** Extension tracks without an eager stream URL queue as a placeholder the service resolves. */
@@ -2161,7 +2094,7 @@ class MainActivity : ComponentActivity() {
         if (track.playbackUri.isNotBlank()) return track
         val placeholder = track.extensionStreamPlaceholder()
         if (placeholder == null) {
-            Toast.makeText(this, "This track has no playable source.", Toast.LENGTH_LONG).show()
+            messenger.info("This track has no playable source.", longLength = true)
             return null
         }
         return track.copy(playbackUri = placeholder)
@@ -2206,10 +2139,21 @@ class MainActivity : ComponentActivity() {
     private fun removeThemePack(themePackId: String) {
         if (dev.relay.music.extension.isBuiltInThemePack(themePackId)) return
         activityScope.launch {
+            themeAssets.removeAll(themePackId)
             settingsStore.save(
                 relaySettings.withoutThemePack(themePackId),
             )
         }
+    }
+
+    private fun launchDiagnosticsExport() {
+        diagnosticsExportLauncher.launch("relay-diagnostics-${'$'}{System.currentTimeMillis()}.txt")
+    }
+
+    private fun launchThemeBackgroundImport(packId: String) {
+        if (dev.relay.music.extension.isBuiltInThemePack(packId)) return
+        pendingBackgroundPackId = packId
+        themeAssetLauncher.launch(arrayOf("image/jpeg", "image/png", "image/webp"))
     }
 
     private fun pickShuffleSeed(salt: String) {
@@ -2264,7 +2208,7 @@ class MainActivity : ComponentActivity() {
             playerEngine.refreshMetadata(tracks)
             refreshLibrary()
             saved.artworkError?.let { error ->
-                Toast.makeText(this@MainActivity, "Metadata saved, but cover art failed: ${error.message ?: "try again"}", Toast.LENGTH_LONG).show()
+                messenger.info("Metadata saved, but cover art failed: ${error.message ?: "try again"}", longLength = true)
             }
         }
     }
@@ -2298,115 +2242,55 @@ class MainActivity : ComponentActivity() {
         }
     }
 
-    private fun loadLyrics(track: Track) {
-        val key = track.key()
-        if (lyricsTrackKey == key) return
-        lyricsTrackKey = key
-        lyricsText = null
-        lyricsMessage = null
-        activityScope.launch {
-            lyricsText = withContext(Dispatchers.IO) { userLibraryDao.lyrics(track.sourceId, track.id)?.content }
-        }
-    }
-
-    private fun saveLyrics(track: Track, content: String) {
-        val key = track.key()
-        lyricsTrackKey = key
-        lyricsText = content.trim().takeIf { it.isNotEmpty() }
-        lyricsMessage = null
-        activityScope.launch(Dispatchers.IO) {
-            userLibraryDao.saveLyrics(
-                TrackLyricsEntity(track.sourceId, track.id, content.trim(), "local", System.currentTimeMillis()),
-            )
-        }
-    }
-
-    private fun fetchLyrics(track: Track) {
-        if (track.title.isBlank() || track.artist.isBlank()) return
-        val key = track.key()
-        lyricsTrackKey = key
-        lyricsMessage = "Fetching lyrics…"
-        activityScope.launch {
-            lyricsApi.fetch(track.artist, track.title).fold(
-                onSuccess = { content ->
-                    if (lyricsTrackKey != key) return@fold
-                    saveLyrics(track, content)
-                    lyricsMessage = "Lyrics from Lyrics.ovh."
-                },
-                onFailure = { error -> if (lyricsTrackKey == key) lyricsMessage = error.message ?: "Could not fetch lyrics." },
-            )
-        }
-    }
-
-    private fun handleLastFmAction() {
-        when (lastFmConnectionState) {
-            LastFmConnectionState.SETUP_REQUIRED -> Unit
-            LastFmConnectionState.CONNECTED -> {
-                sessionKeyStore.clear()
-                lastFmConnectionState = LastFmConnectionState.DISCONNECTED
-                lastFmErrorMessage = null
-            }
-
-            LastFmConnectionState.AUTHORIZING -> finishLastFmConnection()
-            LastFmConnectionState.DISCONNECTED,
-            LastFmConnectionState.ERROR,
-            -> beginLastFmConnection()
-        }
-    }
-
-    private fun importLastFmHistory() {
-        val session = sessionKeyStore.read() ?: run {
-            lastFmHistoryImportMessage = "Connect Last.fm before importing history."
+    private fun importLyricsFrom(uri: Uri) {
+        val track = playerEngine.state.value.currentTrack ?: run {
+            messenger.info("Play a track before importing lyrics.", longLength = false)
             return
         }
-        lastFmHistoryImportMessage = "Importing the latest 1000 Last.fm scrobbles…"
         activityScope.launch {
-            when (val result = withContext(Dispatchers.IO) { lastFmApi.recentHistory(session.username) }) {
-                is LastFmResult.Failure -> lastFmHistoryImportMessage = result.message
-                is LastFmResult.Success -> {
-                    val imported = withContext(Dispatchers.IO) {
-                        val existing = userLibraryDao.historySnapshot().map { entry -> entry.asListeningEvent() }
-                        val candidates = result.value.map { track -> track.asImportedListeningEvent() }
-                        val newEvents = newListeningEventsForImport(existing, candidates)
-                        newEvents.forEach { event -> userLibraryDao.addHistory(event.asHistoryEntry()) }
-                        userLibraryDao.ensureLocalProfile("Relay", System.currentTimeMillis())
-                        userLibraryDao.localProfile()?.let { profile ->
-                            userLibraryDao.saveLocalProfile(profile.copy(lastFmUsername = session.username))
-                        }
-                        newEvents.size
-                    }
-                    lastFmHistoryImportMessage = if (imported == 0) {
-                        "No new Last.fm scrobbles to import."
-                    } else {
-                        "Imported $imported Last.fm scrobbles into local history."
-                    }
+            val result = runCatching {
+                withContext(Dispatchers.IO) {
+                    contentResolver.openInputStream(uri)?.use {
+                        it.readBounded(THEME_PACK_MAX_BYTES).toString(Charsets.UTF_8)
+                    } ?: error("Could not read the selected lyrics file.")
                 }
             }
+            result.fold(
+                onSuccess = { content ->
+                    lyricsController.save(track, content.trim())
+                    messenger.info("Lyrics imported for ${track.title}.", longLength = false)
+                },
+                onFailure = {
+                    messenger.info("Could not import the lyrics file.", longLength = true)
+                },
+            )
         }
     }
 
-    private fun saveLocalProfileName(name: String) {
-        val displayName = name.trim().take(64)
-        if (displayName.isBlank()) return
-        activityScope.launch(Dispatchers.IO) {
-            userLibraryDao.ensureLocalProfile("Relay", System.currentTimeMillis())
-            userLibraryDao.localProfile()?.let { profile -> userLibraryDao.saveLocalProfile(profile.copy(displayName = displayName)) }
+    private fun launchLyricsExport() {
+        val track = playerEngine.state.value.currentTrack
+        if (track == null || lyricsController.text.isNullOrBlank()) {
+            messenger.info("No lyrics to export.", longLength = false)
+            return
         }
+        val base = "${track.artist}-${track.title}"
+            .map { c -> if (c.isLetterOrDigit() || c in " -_") c else '_' }
+            .joinToString("")
+            .trim()
+            .ifEmpty { "lyrics" }
+        lyricsExportLauncher.launch(base.take(96) + ".lrc")
     }
 
-    private fun unlinkLastFmHistory(removeImportedEvents: Boolean) {
+    private fun exportLyricsTo(uri: Uri) {
+        val content = lyricsController.text ?: return
         activityScope.launch {
-            withContext(Dispatchers.IO) {
-                userLibraryDao.localProfile()?.let { profile ->
-                    userLibraryDao.saveLocalProfile(profile.copy(lastFmUsername = null))
+            val result = runCatching {
+                withContext(Dispatchers.IO) {
+                    contentResolver.openOutputStream(uri)?.use { it.write(content.toByteArray(Charsets.UTF_8)) }
+                        ?: error("Could not open the selected file.")
                 }
-                if (removeImportedEvents) userLibraryDao.deleteHistoryByOrigin(ListeningOrigin.LASTFM_IMPORT.name)
             }
-            lastFmHistoryImportMessage = if (removeImportedEvents) {
-                "Last.fm association and imported history removed from this device."
-            } else {
-                "Last.fm association removed. Imported listening history remains local."
-            }
+            messenger.info(if (result.isSuccess) "Lyrics exported." else "Could not export lyrics.", longLength = true)
         }
     }
 
@@ -2447,97 +2331,15 @@ class MainActivity : ComponentActivity() {
                     ),
                 )
             }.onFailure {
-                Toast.makeText(this@MainActivity, "Could not create album chart image.", Toast.LENGTH_LONG).show()
-            }
-        }
-    }
-
-    private fun beginLastFmConnection() {
-        lastFmConnectionState = LastFmConnectionState.AUTHORIZING
-        lastFmErrorMessage = null
-        authorizationToken = null
-        activityScope.launch {
-            when (val result = withContext(Dispatchers.IO) { lastFmApi.requestToken() }) {
-                is LastFmResult.Failure -> {
-                    lastFmErrorMessage = result.message
-                    lastFmConnectionState = LastFmConnectionState.ERROR
-                }
-                is LastFmResult.Success -> {
-                    authorizationToken = result.value
-                    runCatching {
-                        startActivity(Intent(Intent.ACTION_VIEW, lastFmApi.authorizationUrl(result.value).toUri()))
-                    }.onFailure {
-                        lastFmErrorMessage = "Could not open a browser for Last.fm authorization."
-                        lastFmConnectionState = LastFmConnectionState.ERROR
-                    }
-                }
-            }
-        }
-    }
-
-    private fun finishLastFmConnection() {
-        val token = authorizationToken ?: run {
-            lastFmConnectionState = LastFmConnectionState.ERROR
-            return
-        }
-        activityScope.launch {
-            when (val result = withContext(Dispatchers.IO) { lastFmApi.createSession(token) }) {
-                is LastFmResult.Failure -> {
-                    lastFmErrorMessage = result.message
-                    lastFmConnectionState = LastFmConnectionState.ERROR
-                }
-                is LastFmResult.Success -> {
-                    sessionKeyStore.save(result.value)
-                    authorizationToken = null
-                    lastFmErrorMessage = null
-                    lastFmConnectionState = LastFmConnectionState.CONNECTED
-                }
+                messenger.info("Could not create album chart image.", longLength = true)
             }
         }
     }
 
     private fun debugScrobble() {
         startService(Intent(this, PlaybackService::class.java).setAction(PlaybackService.ACTION_DEBUG_SCROBBLE))
-        Toast.makeText(this, "Debug scrobble requested.", Toast.LENGTH_SHORT).show()
+        messenger.info("Debug scrobble requested.", longLength = false)
     }
-
-    private fun ListeningHistoryEntity.asListeningEvent() = ListeningEvent(
-        sourceId = sourceId,
-        trackId = trackId,
-        playedAtEpochMs = playedAtEpochMs,
-        title = title,
-        artist = artist,
-        album = album,
-        durationMs = durationMs,
-        origin = ListeningOrigin.entries.firstOrNull { it.name == origin } ?: ListeningOrigin.LOCAL,
-        identityFingerprint = identityFingerprint,
-    )
-
-    private fun LastFmHistoryTrack.asImportedListeningEvent(): ListeningEvent {
-        val event = ListeningEvent(
-            sourceId = LASTFM_IMPORT_SOURCE_ID,
-            trackId = recordingId ?: "$artist\u0000$title",
-            playedAtEpochMs = playedAtEpochMs,
-            title = title,
-            artist = artist,
-            album = album,
-            origin = ListeningOrigin.LASTFM_IMPORT,
-            identityFingerprint = recordingId,
-        )
-        return event.copy(identityFingerprint = event.identityFingerprint ?: event.effectiveFingerprint())
-    }
-
-    private fun ListeningEvent.asHistoryEntry() = ListeningHistoryEntity(
-        sourceId = sourceId,
-        trackId = trackId,
-        playedAtEpochMs = playedAtEpochMs,
-        title = title,
-        artist = artist,
-        album = album,
-        durationMs = durationMs,
-        origin = origin.name,
-        identityFingerprint = identityFingerprint?.take(512),
-    )
 
     private fun FavoriteTrackEntity.key(): String = "$sourceId\u0000$trackId"
     private fun TrackFlagsEntity.key(): String = "$sourceId\u0000$trackId"
@@ -2548,8 +2350,7 @@ class MainActivity : ComponentActivity() {
         const val ACTION_EXTENSION_INSTALL_STATUS = "dev.relay.music.EXTENSION_INSTALL_STATUS"
         const val QUEUE_SAVE_INTERVAL_MS = 15_000L
         const val MAX_SEED_IMAGE_BYTES = 32 * 1024 * 1024
-        const val LASTFM_IMPORT_SOURCE_ID = "lastfm"
-    }
+        }
 }
 
 internal fun RelaySettings.withRepositoryThemePack(
