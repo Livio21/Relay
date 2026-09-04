@@ -135,9 +135,29 @@ The user-facing `Crossfade` setting is persisted and defaults to off. It is capp
 - Desktop parity: desktop JSON-RPC extensions only handshake; desktop has no extension UI or LAN sync wiring.
 - Phase 4A Glance widget — verify all three size buckets and keyguard hosting on device; live wallpaper device checks remain.
 
+**Soulseek source extension published (2026-09-03, owner-authorized):** new `soulseek-source`
+module in `relay-extensions` — a direct Soulseek P2P client (server login with the user's own
+account from source settings, bounded FileSearch collection, QueueUpload/TransferRequest/F-connection
+peer transfers) that serves streams from a loopback-only HTTP server with Range support. Published
+as catalog 0.3.18 (`relay-18`, all five APKs, same signer fingerprint, catalog signature verified).
+Guidelines now allow account-based and P2P sources (`EXTENSION_AUTHORING.md` §1.1/§1.5/§2/§8;
+note in `relay-android-extension-template/README.md`). Extension-side codec/parsing/ranking covered
+by `SoulseekSourceTest` (11 tests incl. the shared contract). **Not yet verified on a live network**
+(login + search + play + download on device needs the owner's Soulseek account; files > 48 MB and
+queued slots > 4 min fail with a message).
+
+**Host support for P2P sources (main repo, implemented and green, NOT committed):**
+`isValidMediaUrl` accepts `http://127.0.0.1|localhost` only, `network_security_config.xml` permits
+cleartext for loopback only and is referenced from the manifest, `RemoteTrackDownloadClient` accepts
+loopback origins without relaxing HTTPS elsewhere. New `LoopbackMediaUrlTest` + extended
+`RemoteTrackDownloadClientTest`. Check: `:composeApp:desktopTest :androidApp:testDebugUnitTest
+:androidApp:assembleDebug` all green. Commit the host side with the next app build — the published
+Soulseek extension cannot stream in Relay until these host changes ship.
+
 ## Device/test notes
 
 - Phone: CPH2649 over adb; `adb install -r`, then test flows manually. FMA extension 0.2.2 installed via the live catalog.
 - Manual smoke test for the lazy-resolution path: add an FMA track to a playlist → force-stop Relay → reopen → play the playlist. It must stream without re-searching (the placeholder resolves in the service).
+- Soulseek device checks to add: install Soulseek from AVAILABLE, enter account in its settings, search returns ranked audio, a track plays, DOWNLOAD saves a file, denied/queued peers surface a readable message, and force-stop does not strand the loopback port.
 - If a new FMA release is needed: bump version in `relay-extensions`, follow the publish pipeline above (tag `fma-vX.Y.Z`). Publishing to GitHub requires the user's OK per action.
 - Last.fm needs `LASTFM_API_KEY`/`LASTFM_SHARED_SECRET` in untracked `local.properties`.

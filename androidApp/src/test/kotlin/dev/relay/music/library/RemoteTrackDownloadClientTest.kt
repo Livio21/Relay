@@ -3,10 +3,20 @@ package dev.relay.music.library
 import java.net.URL
 import kotlin.test.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFalse
 import kotlin.test.assertTrue
 
 class RemoteTrackDownloadClientTest {
     private val credentials = mapOf("Authorization" to "Bearer secret", "Cookie" to "session=secret")
+
+    @Test
+    fun loopbackDownloadUrlsAreAcceptedAndOthersRejected() {
+        assertTrue("http://127.0.0.1:1234/s/1".isLoopbackHttpUrl())
+        assertTrue("http://LOCALHOST/s/1".isLoopbackHttpUrl())
+        assertFalse("https://example.com/a.mp3".isLoopbackHttpUrl())
+        assertFalse("http://192.168.0.5/s/1".isLoopbackHttpUrl())
+        assertFalse("http://127.0.0.1.example/s/1".isLoopbackHttpUrl())
+    }
 
     @Test
     fun extensionHeadersOnlySurviveSameOriginRedirects() {

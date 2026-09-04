@@ -279,7 +279,18 @@ private fun String.isValidListingId() = matches(Regex("[a-z0-9][a-z0-9._-]{0,63}
 
 private fun String?.isValidTrackId() = !isNullOrBlank() && length <= 512
 
-internal fun String.isValidMediaUrl() = startsWith("https://") && length <= 8_192
+/**
+ * Media URLs must be HTTPS; the one exception is a P2P source's own loopback stream server
+ * (`http://127.0.0.1[:port]/...`), which Relay's network security config also treats specially.
+ */
+internal fun String.isValidMediaUrl(): Boolean =
+    (startsWith("https://") || isLoopbackHttpUrl()) && length <= 8_192
+
+internal fun String.isLoopbackHttpUrl(): Boolean {
+    if (!startsWith("http://")) return false
+    val host = removePrefix("http://").substringBefore('/').substringBefore(':').lowercase()
+    return host == "127.0.0.1" || host == "localhost"
+}
 
 private const val MAX_SOURCE_TRACKS = 100
 

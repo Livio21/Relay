@@ -31,7 +31,9 @@ class RemoteTrackDownloadClient(private val context: Context) {
         headers: Map<String, String> = emptyMap(),
         onProgress: (downloadedBytes: Long, totalBytes: Long) -> Unit,
     ): RemoteTrackDownloadResult = withContext(Dispatchers.IO) {
-        if (!downloadUrl.startsWith("https://")) return@withContext RemoteTrackDownloadResult.Failure("Download URL must use HTTPS.")
+        if (!downloadUrl.startsWith("https://") && !downloadUrl.isLoopbackHttpUrl()) {
+            return@withContext RemoteTrackDownloadResult.Failure("Download URL must use HTTPS.")
+        }
         var output: DocumentFile? = null
         try {
             val connection = openSecureConnection(downloadUrl, headers)
@@ -80,8 +82,11 @@ class RemoteTrackDownloadClient(private val context: Context) {
     private fun openSecureConnection(initialUrl: String, headers: Map<String, String>): HttpURLConnection {
         var url = URL(initialUrl)
         var extensionHeaders = headers
+        val loopbackOrigin = url.host.isLoopbackHost()
         repeat(MAX_REDIRECTS + 1) { redirect ->
-            require(url.protocol == "https") { "Download redirected away from HTTPS." }
+            require(url.protocol == "https" || (loopbackOrigin && url.host.isLoopbackHost())) {
+                "Download redirected away from HTTPS."
+            }
             val connection = (url.openConnection() as? HttpURLConnection) ?: error("Download URL is invalid.")
             connection.instanceFollowRedirects = false
             connection.connectTimeout = CONNECT_TIMEOUT_MS
@@ -122,6 +127,13 @@ class RemoteTrackDownloadClient(private val context: Context) {
 /** Source credentials belong to the origin that requested them, never to a redirect target. */
 internal fun forwardedExtensionHeaders(headers: Map<String, String>, from: URL, to: URL): Map<String, String> =
     if (from.sameOriginAs(to)) headers else emptyMap()
+
+/** P2P source extensions stream from their own loopback HTTP server; nothing else may be cleartext. */
+internal fun String.isLoopbackHttpUrl(): Boolean =
+    startsWith("http://") && removePrefix("http://").substringBefore('/').substringBefore(':').isLoopbackHost()
+
+private fun String.isLoopbackHost(): Boolean =
+    equals("127.0.0.1", ignoreCase = true) || equals("localhost", ignoreCase = true)
 
 private fun URL.sameOriginAs(other: URL): Boolean =
     protocol.equals(other.protocol, ignoreCase = true) &&
