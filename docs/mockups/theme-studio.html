@@ -1,0 +1,312 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="color-scheme" content="dark">
+<title>Relay — Theme Studio</title>
+<style>
+  :root {
+    --ink: #050505;
+    --panel: #101010;
+    --raise: #171717;
+    --line: #303030;
+    --paper: #f1f1ec;
+    --muted: #92928b;
+    --signal: #4b88ff;
+    --sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+    --mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  }
+  * { box-sizing: border-box; }
+  html { background: #141414; }
+  body {
+    margin: 0; background: #141414; color: var(--paper);
+    font-family: var(--sans); -webkit-font-smoothing: antialiased;
+    overflow-wrap: anywhere;
+  }
+  .page-heading { max-inline-size: 1280px; margin-inline: auto; padding: 32px 24px 8px; }
+  .kicker { margin: 0 0 8px; font: 11px/1 var(--mono); letter-spacing: .08em; text-transform: uppercase; color: var(--muted); }
+  .page-heading h1 { margin: 0; font-size: 28px; line-height: 1.1; font-weight: 700; letter-spacing: .02em; text-wrap: balance; }
+  .dek { max-inline-size: 72ch; margin: 8px 0 0; font-size: 12px; line-height: 1.5; color: var(--muted); }
+  .studio-wrap { max-inline-size: 1280px; margin-inline: auto; padding: 20px 24px 40px; }
+
+  .studio { inline-size: 100%; block-size: 860px; border: 1px solid var(--line); background: var(--ink); display: flex; flex-direction: column; }
+  .studio-head { flex: none; min-block-size: 56px; border-block-end: 1px solid var(--line); display: flex; align-items: center; gap: 12px; padding: 0 14px; }
+  .brand { font: 10px/1 var(--mono); letter-spacing: .08em; text-transform: uppercase; color: var(--muted); }
+  .studio-title { font-size: 16px; font-weight: 700; letter-spacing: 1px; text-transform: uppercase; }
+  .status { margin-inline-start: auto; font: 10px/1 var(--mono); letter-spacing: .06em; text-transform: uppercase; color: var(--signal); }
+  .btn { min-block-size: 34px; display: inline-flex; align-items: center; padding: 0 12px; border: 1px solid var(--line); color: var(--paper); font: 10px/1 var(--mono); letter-spacing: .06em; text-transform: uppercase; background: transparent; text-decoration: none; }
+  .btn.primary { background: var(--paper); color: var(--ink); }
+  .studio-body { flex: 1; min-block-size: 0; display: flex; }
+
+  .preview-pane { inline-size: 420px; flex: none; border-inline-end: 1px solid var(--line); padding: 14px; display: flex; flex-direction: column; gap: 10px; min-block-size: 0; }
+  .pane-label { font: 10px/1 var(--mono); letter-spacing: .08em; text-transform: uppercase; color: var(--muted); }
+  .preview-tabs { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; }
+  .preview-tab { min-block-size: 30px; display: flex; align-items: center; justify-content: center; border: 1px solid var(--line); font: 9px/1 var(--mono); letter-spacing: .06em; text-transform: uppercase; color: var(--muted); }
+  .preview-tab.is-on { color: var(--signal); background: var(--panel); }
+  .device { inline-size: 340px; block-size: 700px; margin-inline: auto; border: 1px solid var(--line); background: #0b0b0b; position: relative; overflow: hidden; display: flex; flex-direction: column; }
+  .preview-caption { font: 9px/1.4 var(--mono); letter-spacing: .05em; text-transform: uppercase; color: var(--muted); text-align: center; }
+
+  .art { position: relative; overflow: hidden; display: block; background: #222; }
+  .art::before, .art::after { content: ""; position: absolute; display: block; }
+  .art--lowtide { background: #17403d; }
+  .art--lowtide::before { inset-inline: 12%; inset-block-start: 22%; block-size: 16%; background: #d7dfc9; }
+  .art--lowtide::after { inline-size: 38%; aspect-ratio: 1; border-radius: 50%; background: #e6c48a; inset-inline-end: 14%; inset-block-end: 16%; }
+  .art--saltair { background: #b9d8d6; }
+  .art--saltair::before { inline-size: 56%; aspect-ratio: 1; border-radius: 50%; border: 1px solid #1d3557; inset-inline-start: 22%; inset-block-start: 22%; }
+  .art--saltair::after { inline-size: 26%; aspect-ratio: 1; border-radius: 50%; background: #1d3557; inset-inline-start: 37%; inset-block-start: 37%; }
+  .art--quiethours { background: #17233c; }
+  .art--quiethours::before { inset-block: 16%; inset-inline-start: 22%; inline-size: 12%; background: #8d99ae; }
+  .art--quiethours::after { inset-block: 16%; inset-inline-end: 22%; inline-size: 12%; background: #5b6b8c; }
+  .art--fieldnotes { background: #b99a78; }
+  .art--fieldnotes::before { inset: 12%; border: 1px solid #3b2d24; }
+  .art--fieldnotes::after { inline-size: 26%; aspect-ratio: 1; border-radius: 50%; background: #3b2d24; inset-inline-start: 18%; inset-block-start: 18%; }
+  .art--paperradio { background: #e8e0ce; }
+  .art--paperradio::before { inset-inline: 16%; inset-block-start: 30%; block-size: 40%; background: #c2473b; }
+  .art--paperradio::after { inset-inline: 16%; inset-block-end: 12%; block-size: 2px; background: #181818; }
+
+  /* The preview pack: orange pivot + artwork bleed + wheel. */
+  .p-bleed { position: absolute; inset-block-start: -120px; inset-inline-start: -80px; inline-size: 500px; block-size: 500px; filter: blur(54px); opacity: .32; background: #17403d; border-radius: 50%; }
+  .p-bleed::before { content: ""; position: absolute; inset-inline: 12%; inset-block-start: 22%; block-size: 16%; background: #d7dfc9; }
+  .p-bleed::after { content: ""; position: absolute; inline-size: 38%; aspect-ratio: 1; border-radius: 50%; background: #e6c48a; inset-inline-end: 14%; inset-block-end: 16%; }
+  .p-content { position: relative; flex: 1; display: flex; flex-direction: column; padding: 16px 16px 0; min-block-size: 0; }
+  .p-top { display: flex; align-items: baseline; justify-content: space-between; }
+  .p-kicker { font: 9px/1 var(--mono); letter-spacing: 2px; color: #ff4f00; text-transform: uppercase; }
+  .p-name { font: 9px/1 var(--mono); letter-spacing: .08em; color: #a8a8a8; text-transform: uppercase; }
+  .p-title { margin: 4px 0 0; font-size: 26px; line-height: 1; font-weight: 300; letter-spacing: 2px; text-transform: uppercase; }
+  .p-rule { block-size: 1px; background: #ff4f00; opacity: .55; margin-block-start: 8px; }
+  .p-hero { display: flex; gap: 12px; margin-block-start: 12px; align-items: flex-end; }
+  .p-hero .art { inline-size: 168px; block-size: 168px; flex: none; box-shadow: 0 8px 24px #000; }
+  .p-hero-text { min-inline-size: 0; }
+  .p-hero-text h2 { margin: 0; font-size: 20px; line-height: 1.05; font-weight: 300; letter-spacing: 1.2px; text-transform: uppercase; }
+  .p-hero-text p { margin: 4px 0 0; font-size: 10px; color: #a8a8a8; }
+  .p-progress { margin-block-start: 12px; block-size: 2px; background: #2a2a2a; }
+  .p-progress > span { display: block; block-size: 100%; inline-size: 34%; background: #ff4f00; }
+  .p-times { display: flex; justify-content: space-between; margin-block-start: 4px; font: 8px/1 var(--mono); color: #a8a8a8; }
+  .p-next { margin-block-start: 12px; border-block-start: 1px solid #2b2b2b; }
+  .p-next-label { padding-block: 8px 4px; font: 8px/1 var(--mono); letter-spacing: .1em; color: #a8a8a8; text-transform: uppercase; }
+  .p-next-row { display: flex; align-items: center; gap: 8px; min-block-size: 34px; border-block-end: 1px solid #2b2b2b; }
+  .p-next-row .art { inline-size: 24px; block-size: 24px; flex: none; }
+  .p-next-row span { font-size: 10px; letter-spacing: .4px; text-transform: uppercase; }
+  .p-next-row em { margin-inline-start: auto; font: 8px/1 var(--mono); color: #a8a8a8; font-style: normal; }
+  .p-wheel-wrap { position: relative; display: flex; align-items: center; justify-content: center; padding-block: 10px 14px; }
+  .p-wheel { inline-size: 138px; block-size: 138px; border-radius: 50%; border: 1px solid #4a4a4a; background: radial-gradient(circle at 50% 40%, #1b1b1b, #101010); position: relative; }
+  .p-wheel span { position: absolute; font: 8px/1 var(--mono); color: #a8a8a8; letter-spacing: .05em; }
+  .p-wheel .w-menu { inset-block-start: 10px; inset-inline-start: 50%; transform: translateX(-50%); }
+  .p-wheel .w-prev { inset-inline-start: 12px; inset-block-start: 50%; transform: translateY(-50%); font-size: 10px; }
+  .p-wheel .w-next { inset-inline-end: 12px; inset-block-start: 50%; transform: translateY(-50%); font-size: 10px; }
+  .p-wheel .w-play { inset-block-end: 10px; inset-inline-start: 50%; transform: translateX(-50%); }
+  .p-wheel .w-center { inline-size: 48px; block-size: 48px; border-radius: 50%; border: 1px solid #4a4a4a; background: #151515; inset-block-start: 50%; inset-inline-start: 50%; transform: translate(-50%, -50%); }
+
+  .controls { flex: 1; min-inline-size: 0; padding: 14px 16px; min-block-size: 0; overflow: hidden; display: flex; flex-direction: column; gap: 12px; }
+  .start-row { display: flex; flex-wrap: wrap; gap: 4px; }
+  .control-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px 22px; align-content: start; }
+  .group { display: flex; flex-direction: column; gap: 5px; min-inline-size: 0; }
+  .group-label { font: 9px/1 var(--mono); letter-spacing: .08em; text-transform: uppercase; color: var(--muted); }
+  .chips { display: flex; flex-wrap: wrap; gap: 4px; }
+  .chip { min-block-size: 24px; display: inline-flex; align-items: center; padding: 0 7px; border: 1px solid var(--line); font: 8px/1 var(--mono); letter-spacing: .04em; text-transform: uppercase; color: var(--muted); white-space: nowrap; }
+  .chip.is-on { background: var(--panel); color: var(--signal); }
+  .row { display: flex; align-items: center; gap: 8px; min-inline-size: 0; }
+  .row .hint { font: 8px/1 var(--mono); color: var(--muted); }
+  .swatches { display: flex; gap: 5px; align-items: center; }
+  .swatch { inline-size: 20px; block-size: 20px; border: 1px solid var(--line); }
+  .swatch.is-on { outline: 1px solid var(--paper); outline-offset: 2px; }
+  .toggle { inline-size: 34px; block-size: 18px; border: 1px solid var(--line); position: relative; flex: none; }
+  .toggle::after { content: ""; position: absolute; inset-block-start: 2px; inset-inline-start: 2px; inline-size: 12px; block-size: 12px; background: var(--muted); }
+  .toggle.on::after { inset-inline-start: 18px; background: var(--signal); }
+  .field { min-block-size: 28px; border: 1px solid var(--line); padding: 0 8px; display: flex; align-items: center; font-size: 11px; color: var(--paper); }
+  .scale { display: flex; align-items: center; gap: 6px; }
+  .scale .field { min-inline-size: 52px; justify-content: center; font: 9px/1 var(--mono); }
+  .scale .step { inline-size: 24px; block-size: 24px; border: 1px solid var(--line); display: flex; align-items: center; justify-content: center; font: 10px/1 var(--mono); color: var(--muted); }
+  .studio-foot { flex: none; border-block-start: 1px solid var(--line); min-block-size: 46px; display: flex; align-items: center; gap: 12px; padding: 0 14px; }
+  .foot-note { font: 9px/1.4 var(--mono); color: var(--muted); letter-spacing: .04em; text-transform: uppercase; }
+  .foot-actions { margin-inline-start: auto; display: flex; gap: 8px; }
+
+  :where(button, a, [tabindex]):focus-visible { outline: 2px solid var(--signal); outline-offset: 2px; }
+
+  @media (max-width: 1040px) {
+    .studio { block-size: auto; }
+    .studio-body { flex-direction: column; }
+    .preview-pane { inline-size: 100%; border-inline-end: 0; border-block-end: 1px solid var(--line); }
+    .controls { overflow: visible; }
+  }
+</style>
+</head>
+<body>
+
+<header class="page-heading">
+  <p class="kicker">Relay / Theme Studio</p>
+  <h1>Make the player yours</h1>
+  <p class="dek">A recipe, not a clone: pick a starting point, then swap the shell, player, type, artwork and motion. Packs stay data-only.</p>
+</header>
+
+<main class="studio-wrap">
+  <section class="studio" aria-label="Theme Studio">
+
+    <div class="studio-head">
+      <span class="brand">Relay</span>
+      <span class="studio-title">Theme Studio</span>
+      <span class="status">Unsaved</span>
+      <a class="btn" href="#">Cancel</a>
+      <a class="btn primary" href="#">Save pack</a>
+    </div>
+
+    <div class="studio-body">
+
+      <aside class="preview-pane" aria-label="Live preview">
+        <span class="pane-label">Preview</span>
+        <div class="preview-tabs" role="tablist" aria-label="Preview screen">
+          <span class="preview-tab" role="tab" aria-selected="false">Library</span>
+          <span class="preview-tab is-on" role="tab" aria-selected="true">Player</span>
+          <span class="preview-tab" role="tab" aria-selected="false">Home</span>
+        </div>
+
+        <div class="device">
+          <div class="p-bleed" aria-hidden="true"></div>
+          <div class="p-content">
+            <div class="p-top">
+              <span class="p-kicker">Music</span>
+              <span class="p-name">Filan Fisteku</span>
+            </div>
+            <h2 class="p-title">Now playing</h2>
+            <div class="p-rule"></div>
+            <div class="p-hero">
+              <span class="art art--lowtide" aria-hidden="true"></span>
+              <div class="p-hero-text">
+                <h3>Salt Air</h3>
+                <p>Harbor Lights · Low Tide</p>
+              </div>
+            </div>
+            <div class="p-progress"><span></span></div>
+            <div class="p-times"><span>1:12</span><span>3:42</span></div>
+            <div class="p-next">
+              <div class="p-next-label">Up next</div>
+              <div class="p-next-row"><span class="art art--lowtide" aria-hidden="true"></span><span>Slow Return</span><em>4:18</em></div>
+              <div class="p-next-row"><span class="art art--lowtide" aria-hidden="true"></span><span>Tape Hiss</span><em>2:57</em></div>
+            </div>
+          </div>
+          <div class="p-wheel-wrap">
+            <div class="p-wheel" aria-label="Click wheel">
+              <span class="w-menu">MENU</span>
+              <span class="w-prev">◀</span>
+              <span class="w-next">▶</span>
+              <span class="w-play">▶❚❚</span>
+              <span class="w-center"></span>
+            </div>
+          </div>
+        </div>
+
+        <p class="preview-caption">Orange pivot · artwork bleed · click wheel</p>
+      </aside>
+
+      <section class="controls" aria-label="Theme recipe">
+
+        <div class="group">
+          <span class="group-label">Start from</span>
+          <div class="start-row">
+            <span class="chip is-on">Orange pivot</span>
+            <span class="chip">Wheel silver</span>
+            <span class="chip">Glass red</span>
+            <span class="chip">Green shelves</span>
+            <span class="chip">Orange tabs</span>
+            <span class="chip">Blank</span>
+          </div>
+        </div>
+
+        <div class="control-grid">
+
+          <div class="group">
+            <span class="group-label">Shell</span>
+            <div class="chips"><span class="chip">Pager</span><span class="chip">Tabs</span><span class="chip">Sidebar</span><span class="chip is-on">Pivot</span><span class="chip">Split</span></div>
+          </div>
+
+          <div class="group">
+            <span class="group-label">Library</span>
+            <div class="chips"><span class="chip">List</span><span class="chip is-on">Cards</span><span class="chip">Shelves</span><span class="chip">Menu</span></div>
+          </div>
+
+          <div class="group">
+            <span class="group-label">Player</span>
+            <div class="chips"><span class="chip">Bar</span><span class="chip">Hero</span><span class="chip">Sheet</span><span class="chip">Split</span><span class="chip is-on">Wheel</span></div>
+          </div>
+
+          <div class="group">
+            <span class="group-label">Artwork</span>
+            <div class="chips"><span class="chip">Flat</span><span class="chip">Rounded</span><span class="chip is-on">Bleed</span><span class="chip">Stack</span></div>
+          </div>
+
+          <div class="group">
+            <span class="group-label">Type</span>
+            <div class="chips"><span class="chip">Grotesque</span><span class="chip is-on">Geometric</span><span class="chip">Humanist</span><span class="chip">Mono</span><span class="chip">Serif</span></div>
+          </div>
+
+          <div class="group">
+            <span class="group-label">Case &amp; scale</span>
+            <div class="row">
+              <div class="chips"><span class="chip">Sentence</span><span class="chip is-on">Upper</span></div>
+              <span class="hint">1.1×</span>
+              <div class="scale"><span class="step">−</span><span class="step">+</span></div>
+            </div>
+          </div>
+
+          <div class="group">
+            <span class="group-label">Surface</span>
+            <div class="chips"><span class="chip is-on">Flat</span><span class="chip">Hairline</span><span class="chip">Soft</span><span class="chip">Glass</span></div>
+          </div>
+
+          <div class="group">
+            <span class="group-label">Accent</span>
+            <div class="swatches">
+              <span class="swatch is-on" style="background:#ff4f00" title="Orange"></span>
+              <span class="swatch" style="background:#2c6fd6" title="Blue"></span>
+              <span class="swatch" style="background:#1db954" title="Green"></span>
+              <span class="swatch" style="background:#e01e3c" title="Red"></span>
+              <span class="swatch" style="background:#f1f1ec" title="Paper"></span>
+            </div>
+            <div class="row"><span class="toggle on"></span><span class="hint">From artwork</span></div>
+          </div>
+
+          <div class="group">
+            <span class="group-label">Background</span>
+            <div class="chips"><span class="chip">Solid</span><span class="chip is-on">Art bleed</span><span class="chip">Gradient</span><span class="chip">Texture</span><span class="chip">Photo</span></div>
+          </div>
+
+          <div class="group">
+            <span class="group-label">Motion</span>
+            <div class="chips"><span class="chip">Cut</span><span class="chip">Fade</span><span class="chip">Slide</span><span class="chip is-on">Pivot</span><span class="chip">Sheet</span></div>
+          </div>
+
+          <div class="group">
+            <span class="group-label">Icons</span>
+            <div class="chips"><span class="chip is-on">Text</span><span class="chip">Line</span><span class="chip">Filled</span></div>
+          </div>
+
+          <div class="group">
+            <span class="group-label">Density</span>
+            <div class="chips"><span class="chip">Compact</span><span class="chip is-on">Regular</span><span class="chip">Airy</span></div>
+          </div>
+
+          <div class="group">
+            <span class="group-label">Personal</span>
+            <div class="field">Filan Fisteku</div>
+            <div class="row"><span class="toggle"></span><span class="hint">Use my photo</span></div>
+            <div class="row"><span class="toggle on"></span><span class="hint">Show greeting</span></div>
+          </div>
+
+        </div>
+      </section>
+    </div>
+
+    <div class="studio-foot">
+      <span class="foot-note">Data-only pack · no executable code · validated before save</span>
+      <div class="foot-actions">
+        <a class="btn" href="#">Export JSON</a>
+        <a class="btn primary" href="#">Preview on device</a>
+      </div>
+    </div>
+
+  </section>
+</main>
+
+</body>
+</html>

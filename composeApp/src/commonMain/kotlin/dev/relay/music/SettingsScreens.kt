@@ -39,6 +39,7 @@ import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.platform.LocalClipboard
 import androidx.compose.ui.input.pointer.pointerInput
@@ -50,6 +51,7 @@ import androidx.compose.ui.semantics.progressBarRangeInfo
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.setProgress
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.window.Dialog
 import kotlin.math.roundToInt
@@ -64,6 +66,10 @@ import dev.relay.music.lastfm.LastFmConnectionState
 import dev.relay.music.playback.ShuffleGrouping
 import dev.relay.music.playback.MissingShuffleValue
 import dev.relay.music.playback.ShuffleProfile
+import dev.relay.music.ui.RelayIcon
+import dev.relay.music.ui.RelayIcons
+import dev.relay.music.ui.RelayMarqueeText
+import dev.relay.music.ui.RelayType
 import dev.relay.music.playback.newShuffleProfile
 import dev.relay.music.haptics.HapticIntensity
 import dev.relay.music.settings.RelaySettings
@@ -93,7 +99,6 @@ import dev.relay.music.settings.equalizerPresetLevels
 import dev.relay.music.settings.normalizedEqualizerBands
 import dev.relay.music.ui.RelayColors
 import dev.relay.music.ui.asThemeColor
-import dev.relay.music.ui.RelayType
 import kotlinx.coroutines.launch
 
 @Composable
@@ -169,7 +174,7 @@ internal fun SettingsScreen(
         modifier = Modifier
             .fillMaxSize()
             .verticalScroll(rememberScrollState())
-            .padding(16.dp),
+            .padding(vertical = 16.dp),
     ) {
         SettingsAccordion("PLAYBACK", submenu == SettingsSubmenu.PLAYBACK, { toggle(SettingsSubmenu.PLAYBACK) }) {
             PlaybackSettings(settings, onResumeQueueChange, onAudioSettingsChange, onPickShuffleSeed)
@@ -250,7 +255,22 @@ internal enum class SettingsSubmenu { PLAYBACK, AUDIO, TRACKING, METADATA, STORA
 private fun SettingsAccordion(label: String, expanded: Boolean, onClick: () -> Unit, content: @Composable () -> Unit) {
     SettingsMenuItem(label, expanded, onClick)
     AnimatedVisibility(visible = expanded, enter = expandVertically(), exit = shrinkVertically()) {
-        Column(modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp)) { content() }
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .background(RelayColors.Panel)
+                .drawBehind {
+                    drawLine(
+                        color = RelayColors.Line,
+                        start = androidx.compose.ui.geometry.Offset(0f, 0f),
+                        end = androidx.compose.ui.geometry.Offset(0f, size.height),
+                        strokeWidth = 2.dp.toPx(),
+                    )
+                }
+                .padding(start = 16.dp, end = 16.dp, top = 8.dp, bottom = 16.dp),
+        ) {
+            content()
+        }
     }
 }
 
@@ -313,17 +333,32 @@ private fun LanDiscoveryControls(
 
 @Composable
 internal fun SettingsMenuItem(label: String, expanded: Boolean, onClick: () -> Unit) {
-    BasicText(
-        "$label ${if (expanded) "−" else "+"}",
-        style = RelayType.Track,
+    Row(
         modifier = Modifier
             .fillMaxWidth()
-            .heightIn(min = 56.dp)
-            .border(1.dp, RelayColors.Line)
+            .heightIn(min = 64.dp)
             .semantics { contentDescription = "${if (expanded) "Close" else "Open"} $label settings" }
             .clickable(role = Role.Button, onClick = onClick)
-            .padding(horizontal = 12.dp, vertical = 18.dp),
-    )
+            .padding(horizontal = 16.dp, vertical = 8.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        RelayMarqueeText(
+            text = label.lowercase(),
+            style = RelayType.HeroArtist.copy(
+                fontSize = 26.sp,
+                lineHeight = 28.sp,
+                color = if (expanded) RelayColors.Signal else RelayColors.Paper,
+            ),
+            modifier = Modifier.weight(1f),
+        )
+        RelayIcon(
+            icon = if (expanded) RelayIcons.ChevronDown else RelayIcons.ChevronRight,
+            description = null,
+            tint = if (expanded) RelayColors.Signal else RelayColors.Muted,
+            size = 20.dp,
+        )
+    }
+    Rule()
 }
 
 @Composable
@@ -337,25 +372,12 @@ internal fun PlaybackSettings(
     var editingShuffleProfile by remember { mutableStateOf(false) }
     val profile = settings.activeShuffleProfile()
     Column {
-        BasicText("PLAYBACK", style = RelayType.Track, modifier = Modifier.padding(bottom = 8.dp))
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .border(width = 1.dp, color = RelayColors.Line)
-                .padding(horizontal = 12.dp),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            BasicText("RESTORE QUEUE", style = RelayType.Track, modifier = Modifier.weight(1f))
-            BasicText(
-                text = if (settings.resumeQueue) "ON" else "OFF",
-                style = RelayType.Utility.copy(color = RelayColors.Signal),
-                modifier = Modifier
-                    .heightIn(min = 48.dp)
-                    .semantics { contentDescription = "Restore queue ${if (settings.resumeQueue) "on" else "off"}" }
-                    .clickable(role = Role.Switch, onClick = { onResumeQueueChange(!settings.resumeQueue) })
-                    .padding(start = 12.dp),
-            )
-        }
+        SettingsValueRow(
+            label = "restore queue",
+            value = if (settings.resumeQueue) "on" else "off",
+            description = "Restore queue ${if (settings.resumeQueue) "on" else "off"}",
+            onClick = { onResumeQueueChange(!settings.resumeQueue) },
+        )
         onAudioSettingsChange?.let { onChange ->
             SettingsChoice(
                 "SPEED",
@@ -501,7 +523,6 @@ internal fun AudioSettings(settings: RelaySettings, onAudioSettingsChange: ((Rel
         mutableStateOf(normalizedEqualizerBands(settings.equalizerBandLevels))
     }
     Column {
-        BasicText("AUDIO", style = RelayType.Track, modifier = Modifier.padding(bottom = 8.dp))
         BasicText("Relay applies these effects to its own playback session.", style = RelayType.Metadata)
         onAudioSettingsChange?.let { onChange ->
             SettingsChoice(
@@ -701,9 +722,9 @@ private fun ShuffleProfileEditorDialog(
                 .border(1.dp, RelayColors.Line)
                 .padding(12.dp),
         ) {
-            BasicText("SHUFFLE PROFILE", style = RelayType.Track, modifier = Modifier.padding(bottom = 8.dp))
+            SettingsHeading("SHUFFLE PROFILE")
             MetadataField("PROFILE NAME", draft.name) { draft = draft.copy(name = it.take(32)) }
-            BasicText("ORDERED RULES", style = RelayType.Track, modifier = Modifier.padding(top = 16.dp, bottom = 8.dp))
+            SettingsHeading("ORDERED RULES", top = 16.dp)
             if (draft.rules.isEmpty()) {
                 BasicText("No rules: unbiased normal shuffle.", style = RelayType.Metadata)
             }
@@ -756,7 +777,7 @@ private fun ShuffleProfileEditorDialog(
                     missingValue = if (draft.missingValue == MissingShuffleValue.LAST) MissingShuffleValue.FIRST else MissingShuffleValue.LAST,
                 )
             }
-            BasicText("IMAGE SEED", style = RelayType.Track, modifier = Modifier.padding(top = 16.dp, bottom = 8.dp))
+            SettingsHeading("IMAGE SEED", top = 16.dp)
             MetadataField("OPTIONAL SALT", draft.seedSalt) { draft = draft.copy(seedSalt = it.take(64)) }
             BasicText(
                 draft.seedLabel?.let { "SEED $it — image bytes stay on this device." }
@@ -799,16 +820,22 @@ internal fun SettingsChoice(label: String, value: String, description: String, o
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .heightIn(min = 56.dp)
-            .border(1.dp, RelayColors.Line)
+            .heightIn(min = 64.dp)
             .semantics { contentDescription = description }
             .clickable(role = Role.Button, onClick = onClick)
-            .padding(horizontal = 12.dp),
+            .padding(vertical = 8.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        BasicText(label, style = RelayType.Track, modifier = Modifier.weight(1f))
-        BasicText(value, style = RelayType.Utility.copy(color = RelayColors.Signal))
+        BasicText(
+            text = label.lowercase(),
+            style = RelayType.HeroArtist.copy(fontSize = 20.sp, lineHeight = 24.sp),
+            maxLines = 1,
+            modifier = Modifier.weight(1f),
+        )
+        BasicText(value, style = RelayType.Metadata.copy(color = RelayColors.Signal))
+        RelayIcon(RelayIcons.ChevronRight, null, tint = RelayColors.Muted, size = 18.dp)
     }
+    Rule()
 }
 
 @Composable
@@ -1158,7 +1185,7 @@ private fun SyncSettings(
             TransportAction("CANCEL LAN SYNC", "Stop this local-network sync session", true, onCancelLanSync, Modifier.fillMaxWidth().padding(top = 8.dp))
         }
         if (pairedDevices.isNotEmpty()) {
-            BasicText("PAIRED DEVICES", style = RelayType.Track, modifier = Modifier.padding(top = 16.dp, bottom = 8.dp))
+            SettingsHeading("PAIRED DEVICES", top = 16.dp)
             pairedDevices.forEach { device ->
                 Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     BasicText(device.name, style = RelayType.Metadata, modifier = Modifier.weight(1f).padding(top = 12.dp))
@@ -1276,7 +1303,6 @@ internal fun StorageSettings(
     }
 
     Column {
-        BasicText("STORAGE", style = RelayType.Track, modifier = Modifier.padding(bottom = 8.dp))
         BasicText(
             if (hasStorageRoot) "Relay indexes music and downloads here. Sync and backups remain separate." else "Choose a Relay folder for music, downloads, sync, and backups.",
             style = RelayType.Metadata,
@@ -1289,43 +1315,19 @@ internal fun StorageSettings(
             Modifier.fillMaxWidth().padding(top = 16.dp),
         )
 
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(top = 16.dp)
-                .border(1.dp, RelayColors.Line)
-                .padding(horizontal = 12.dp),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            BasicText("STORAGE LIMIT", style = RelayType.Track, modifier = Modifier.weight(1f))
-            BasicText(
-                if (limitGb == 0) "UNLIMITED" else "$limitGb GB",
-                style = RelayType.Utility.copy(color = RelayColors.Signal),
-                modifier = Modifier
-                    .heightIn(min = 48.dp)
-                    .semantics { contentDescription = "Download storage limit ${if (limitGb == 0) "unlimited" else "$limitGb gigabytes"}" }
-                    .clickable(role = Role.Button) { onDownloadLimitChange(nextLimitGb) },
-            )
-        }
+        SettingsValueRow(
+            label = "storage limit",
+            value = if (limitGb == 0) "unlimited" else "$limitGb gb",
+            description = "Download storage limit ${if (limitGb == 0) "unlimited" else "$limitGb gigabytes"}",
+            onClick = { onDownloadLimitChange(nextLimitGb) },
+        )
 
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(top = 8.dp)
-                .border(1.dp, RelayColors.Line)
-                .padding(horizontal = 12.dp),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            BasicText("AUTO CLEANUP", style = RelayType.Track, modifier = Modifier.weight(1f))
-            BasicText(
-                if (settings.downloadAutoCleanup) "ENABLED" else "DISABLED",
-                style = RelayType.Utility.copy(color = if (settings.downloadAutoCleanup) RelayColors.Signal else RelayColors.Muted),
-                modifier = Modifier
-                    .heightIn(min = 48.dp)
-                    .semantics { contentDescription = "Automatic download cleanup ${if (settings.downloadAutoCleanup) "enabled" else "disabled"}" }
-                    .clickable(role = Role.Button) { onDownloadAutoCleanupChange(!settings.downloadAutoCleanup) },
-            )
-        }
+        SettingsValueRow(
+            label = "auto cleanup",
+            value = if (settings.downloadAutoCleanup) "enabled" else "disabled",
+            description = "Automatic download cleanup ${if (settings.downloadAutoCleanup) "enabled" else "disabled"}",
+            onClick = { onDownloadAutoCleanupChange(!settings.downloadAutoCleanup) },
+        )
 
         BasicText(
             if (settings.downloadAutoCleanup) "Automatically deletes oldest downloads when storage limit is exceeded." else "Manually clean up downloads when storage limit is exceeded.",
@@ -1344,7 +1346,7 @@ internal fun StorageSettings(
             )
         }
 
-        BasicText("DOWNLOADS", style = RelayType.Track, modifier = Modifier.padding(top = 24.dp, bottom = 8.dp))
+        SettingsHeading("DOWNLOADS", top = 24.dp)
         BasicText(
             text = when {
                 downloads.isEmpty() -> "No downloads yet. Use DOWNLOAD on a source track to keep it offline."
@@ -1405,7 +1407,6 @@ internal fun BackupSettings(
     onAutoBackupExpiryChange: (Int) -> Unit,
 ) {
     Column {
-        BasicText("BACKUP AND RESTORE", style = RelayType.Track, modifier = Modifier.padding(bottom = 8.dp))
         Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             TransportAction(
                 label = "MANUAL EXPORT",
@@ -1428,37 +1429,19 @@ internal fun BackupSettings(
             modifier = Modifier.padding(top = 8.dp),
         )
         if (settings.storageRootUri != null) {
-            Row(
-                modifier = Modifier.fillMaxWidth().border(1.dp, RelayColors.Line).padding(horizontal = 12.dp),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                BasicText("AUTO BACKUP", style = RelayType.Track, modifier = Modifier.weight(1f))
-                BasicText(
-                    settings.backupSchedule.name,
-                    style = RelayType.Utility.copy(color = RelayColors.Signal),
-                    modifier = Modifier
-                        .heightIn(min = 48.dp)
-                        .semantics { contentDescription = "Automatic backup ${settings.backupSchedule.name.lowercase()}" }
-                        .clickable(role = Role.Button) { onBackupScheduleChange(settings.backupSchedule.next()) }
-                        .padding(start = 12.dp),
-                )
-            }
+            SettingsValueRow(
+                label = "auto backup",
+                value = settings.backupSchedule.name.lowercase(),
+                description = "Automatic backup ${settings.backupSchedule.name.lowercase()}",
+                onClick = { onBackupScheduleChange(settings.backupSchedule.next()) },
+            )
             if (settings.backupSchedule != BackupSchedule.OFF) {
-                Row(
-                    modifier = Modifier.fillMaxWidth().border(1.dp, RelayColors.Line).padding(horizontal = 12.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    BasicText("DELETE AUTO AFTER", style = RelayType.Track, modifier = Modifier.weight(1f))
-                    BasicText(
-                        settings.autoBackupExpiryDays.label(),
-                        style = RelayType.Utility.copy(color = RelayColors.Signal),
-                        modifier = Modifier
-                            .heightIn(min = 48.dp)
-                            .semantics { contentDescription = "Delete automatic backups after ${settings.autoBackupExpiryDays} days" }
-                            .clickable(role = Role.Button) { onAutoBackupExpiryChange(settings.autoBackupExpiryDays.nextExpiryDays()) }
-                            .padding(start = 12.dp),
-                    )
-                }
+                SettingsValueRow(
+                    label = "delete auto after",
+                    value = settings.autoBackupExpiryDays.label().lowercase(),
+                    description = "Delete automatic backups after ${settings.autoBackupExpiryDays} days",
+                    onClick = { onAutoBackupExpiryChange(settings.autoBackupExpiryDays.nextExpiryDays()) },
+                )
             }
         }
     }
@@ -1494,11 +1477,13 @@ internal fun RepositorySettings(
         error = null
     }
     Column {
-        BasicText("SOURCE REPOSITORIES", style = RelayType.Track, modifier = Modifier.padding(bottom = 8.dp))
         BasicText("Trusted repositories can be restored, but never install or enable sources automatically.", style = RelayType.Metadata)
         settings.trustedRepositories.forEach { repository ->
-            Column(modifier = Modifier.fillMaxWidth().padding(top = 12.dp).border(1.dp, RelayColors.Line).padding(12.dp)) {
-                BasicText(repository.name, style = RelayType.Track)
+            Column(modifier = Modifier.fillMaxWidth().padding(top = 12.dp)) {
+                BasicText(
+                    repository.name,
+                    style = RelayType.HeroArtist.copy(fontSize = 20.sp, lineHeight = 24.sp),
+                )
                 Row(modifier = Modifier.fillMaxWidth().padding(top = 8.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     TransportAction("REFRESH", "Refresh ${repository.name}", true, { onRefreshRepository(repository) }, Modifier.weight(1f))
                     TransportAction("REMOVE", "Remove ${repository.name}", true, { onRemoveTrustedRepository(repository.id) }, Modifier.weight(1f))
@@ -1506,12 +1491,13 @@ internal fun RepositorySettings(
                 repositoryMessages[repository.id]?.let { BasicText(it, style = RelayType.Metadata, modifier = Modifier.padding(top = 8.dp)) }
                 repositoryCatalogs[repository.id].orEmpty().forEach { extension ->
                     BasicText(
-                        "${extension.name} ${extension.version} — ${extension.kind.name}",
+                        "${extension.name} ${extension.version} · ${extension.kind.name.lowercase()}",
                         style = RelayType.Metadata,
                         modifier = Modifier.padding(top = 8.dp),
                     )
                 }
             }
+            Rule()
         }
         MetadataField("ADD REPOSITORY (OWNER/REPO OR URL)", descriptorUrl, { descriptorUrl = it; error = null })
         val resolvedUrl = repositoryDescriptorUrl(descriptorUrl)
@@ -1588,7 +1574,6 @@ internal fun TrackingSettings(
         LastFmConnectionState.ERROR -> "RETRY LAST.FM"
     }
     Column {
-        BasicText("TRACKING", style = RelayType.Track, modifier = Modifier.padding(bottom = 8.dp))
         BasicText("LAST.FM ${if (connectionState == LastFmConnectionState.CONNECTED) "CONNECTED" else "NOT CONNECTED"}", style = RelayType.Metadata)
         action?.let { TransportAction(it, it.lowercase(), true, onLastFmAction, Modifier.fillMaxWidth().padding(top = 16.dp)) }
         onDebugScrobble?.let { TransportAction("DEBUG SCROBBLE", "Send debug scrobble", true, it, Modifier.fillMaxWidth().padding(top = 8.dp)) }
@@ -1599,7 +1584,6 @@ internal fun TrackingSettings(
 @Composable
 internal fun MetadataSettings() {
     Column {
-        BasicText("METADATA", style = RelayType.Track, modifier = Modifier.padding(bottom = 8.dp))
         BasicText("MUSICBRAINZ · METADATA AND RELEASE IDS", style = RelayType.Metadata)
         BasicText("COVER ART ARCHIVE · ALBUM ART", style = RelayType.Metadata, modifier = Modifier.padding(top = 8.dp))
         BasicText("APPLE SEARCH · ARTWORK FALLBACK", style = RelayType.Metadata, modifier = Modifier.padding(top = 8.dp))
@@ -1615,7 +1599,6 @@ internal fun ThemePackSettings(
     onImportThemeBackground: ((String) -> Unit)? = null,
 ) {
     Column {
-        BasicText("THEME PACKS", style = RelayType.Track, modifier = Modifier.padding(bottom = 8.dp))
         BasicText("Theme Packs are data-only colors and assets. They cannot run code.", style = RelayType.Metadata)
         onImportThemePack?.let {
             TransportAction(
@@ -1701,4 +1684,42 @@ internal fun ThemePackSettings(
             }
         }
     }
+}
+
+
+@Composable
+private fun SettingsHeading(text: String, top: androidx.compose.ui.unit.Dp = 0.dp) {
+    BasicText(
+        text = text.lowercase(),
+        style = RelayType.SectionTitle.copy(fontSize = 28.sp, lineHeight = 30.sp),
+        modifier = Modifier.padding(top = top, bottom = 4.dp),
+    )
+}
+
+
+@Composable
+private fun SettingsValueRow(
+    label: String,
+    value: String,
+    description: String,
+    onClick: () -> Unit,
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .heightIn(min = 64.dp)
+            .semantics { contentDescription = description }
+            .clickable(role = Role.Button, onClick = onClick)
+            .padding(vertical = 8.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        BasicText(
+            label,
+            style = RelayType.HeroArtist.copy(fontSize = 20.sp, lineHeight = 24.sp),
+            modifier = Modifier.weight(1f),
+        )
+        BasicText(value, style = RelayType.Metadata.copy(color = RelayColors.Signal))
+        RelayIcon(RelayIcons.ChevronRight, null, tint = RelayColors.Muted, size = 18.dp)
+    }
+    Rule()
 }

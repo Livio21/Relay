@@ -21,6 +21,8 @@ class RelayDestinationTest {
         assertTrue(RelayDestination(NOW_PLAYING_VIEW, queueOpen = true).hasSubState)
         assertTrue(RelayDestination(SETTINGS_VIEW, settingsSubmenu = SettingsSubmenu.PLAYBACK).hasSubState)
         assertTrue(RelayDestination(EXTENSIONS_VIEW, extensionsSubmenu = ExtensionsSubmenu.SOURCE_SEARCH).hasSubState)
+        assertTrue(RelayDestination(LIBRARY_VIEW, albumKey = "artist\u0000album").hasSubState)
+        assertTrue(RelayDestination(LIBRARY_VIEW, artistKey = "artist").hasSubState)
     }
 
     @Test
@@ -32,6 +34,8 @@ class RelayDestinationTest {
             extensionsSubmenu = ExtensionsSubmenu.DETAILS,
             browsedExtensionId = "org.relay.extensions.fma",
             queueOpen = true,
+            albumKey = "artist\u0000album",
+            artistKey = "artist",
         )
 
         val moved = deep.forView(LIBRARY_VIEW)
@@ -51,6 +55,8 @@ class RelayDestinationTest {
             RelayDestination(EXTENSIONS_VIEW, extensionsTab = ExtensionsTab.AVAILABLE),
             RelayDestination(EXTENSIONS_VIEW, extensionsSubmenu = ExtensionsSubmenu.DETAILS),
             RelayDestination(NOW_PLAYING_VIEW, queueOpen = true),
+            RelayDestination(LIBRARY_VIEW, albumKey = "artist\u0000album"),
+            RelayDestination(LIBRARY_VIEW, artistKey = "artist"),
             RelayDestination(NOW_PLAYING_VIEW, lyricsOpen = true, playerOptionsOpen = true),
         )
         var navigation = RelayNavigationState()

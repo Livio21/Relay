@@ -105,6 +105,7 @@ fun main() = application {
                         .takeIf { it >= 0 }
                         ?.let { engine.setQueue(tracks, it) }
                 },
+                onPlayTracks = { list, index -> engine.setQueue(list, index) },
                 onPlayPause = { if (playback.isPlaying) engine.pause() else engine.play() },
                 onPrevious = engine::skipPrevious,
                 onNext = engine::skipNext,

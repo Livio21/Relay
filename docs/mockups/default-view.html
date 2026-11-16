@@ -1,0 +1,352 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="color-scheme" content="dark">
+<title>Relay — default view</title>
+<style>
+  :root {
+    --ink: #050505;
+    --panel: #0f0f0f;
+    --line: #414141;
+    --paper: #fbfbf5;
+    --muted: #c2c2b8;
+    --accent: #ff4f00;
+    --accent-ink: #090909;
+    --sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+    --mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  }
+  * { box-sizing: border-box; }
+  html { background: #151515; }
+  body {
+    margin: 0; background: #151515; color: var(--paper);
+    font-family: var(--sans); -webkit-font-smoothing: antialiased;
+    overflow-wrap: anywhere;
+  }
+
+  .page-heading { max-inline-size: 1700px; margin-inline: auto; padding: 40px 32px 8px; }
+  .kicker { margin: 0 0 8px; font: 11px/1 var(--mono); letter-spacing: .08em; text-transform: uppercase; color: var(--muted); }
+  .page-heading h1 { margin: 0; font-size: 30px; line-height: 1.05; font-weight: 800; letter-spacing: -.02em; text-wrap: balance; }
+  .dek { max-inline-size: 78ch; margin: 8px 0 0; font-size: 12px; line-height: 1.5; color: var(--muted); }
+
+  .board { max-inline-size: 1700px; margin-inline: auto; padding: 24px 32px 32px; display: grid; grid-template-columns: repeat(4, 390px); gap: 36px 28px; justify-content: center; align-items: start; }
+  .block { display: flex; flex-direction: column; gap: 10px; }
+  .phone { inline-size: 390px; block-size: 844px; background: var(--ink); border: 1px solid var(--line); position: relative; overflow: hidden; display: flex; flex-direction: column; }
+  .caption { margin: 0; font: 10px/1.3 var(--mono); letter-spacing: .06em; text-transform: uppercase; color: var(--muted); }
+  .foot { max-inline-size: 1700px; margin: 0 auto; padding: 0 32px 28px; font: 9px/1.4 var(--mono); letter-spacing: .04em; color: var(--muted); }
+
+  .icon { inline-size: 24px; block-size: 24px; fill: currentColor; display: block; flex: none; }
+  .icon-20 { inline-size: 20px; block-size: 20px; }
+  .icon-28 { inline-size: 28px; block-size: 28px; }
+  .icon-36 { inline-size: 36px; block-size: 36px; }
+  .ibtn { inline-size: 48px; block-size: 48px; display: inline-flex; align-items: center; justify-content: center; border: 0; background: transparent; color: var(--paper); padding: 0; flex: none; }
+  .ibtn.muted { color: var(--muted); }
+  .ibtn.accent { color: var(--accent); }
+
+  .top { flex: none; block-size: 52px; display: grid; grid-template-columns: 48px 1fr 48px; align-items: center; border-block-end: 1px solid var(--line); }
+  .top-title { text-align: center; font: 10px/1 var(--mono); letter-spacing: .14em; text-transform: uppercase; color: var(--muted); }
+  .top-lib { display: flex; align-items: center; padding-inline: 4px; }
+  .top-lib .brand { margin-inline-start: 10px; font: 10px/1 var(--mono); letter-spacing: .12em; text-transform: uppercase; color: var(--muted); }
+  .top-actions { margin-inline-start: auto; display: flex; }
+  .top-lib { grid-template-columns: none; display: flex; }
+
+  /* Now Playing */
+  .np-main { flex: 1; min-block-size: 0; display: flex; flex-direction: column; }
+  .np-art { position: relative; block-size: 61.8%; flex: none; overflow: hidden; border-block-end: 1px solid var(--line); background: #17403d; }
+  .np-art .np-art-layer { position: absolute; inset: -12px; transform: scale(1.06); }
+  .np-info { flex: 1; min-block-size: 0; padding: 21px 21px 13px; display: flex; flex-direction: column; }
+  .np-kicker { font: 10px/1 var(--mono); letter-spacing: .12em; text-transform: uppercase; color: var(--muted); }
+  .np-title { margin: 8px 0 0; font-size: 40px; line-height: .95; font-weight: 800; letter-spacing: -.02em; text-transform: uppercase; text-wrap: balance; }
+  .np-artist { margin: 8px 0 0; font-size: 25px; line-height: 1.1; font-weight: 500; color: var(--paper); }
+  .np-progress { margin-block-start: 21px; block-size: 4px; background: var(--line); }
+  .np-progress > span { display: block; block-size: 100%; inline-size: 32%; background: var(--accent); }
+  .np-times { display: flex; justify-content: space-between; margin-block-start: 8px; font: 10px/1 var(--mono); color: var(--muted); }
+  .np-controls { margin-block-start: 13px; display: flex; align-items: center; justify-content: space-between; }
+  .play-big { inline-size: 64px; block-size: 64px; background: var(--accent); color: var(--accent-ink); border: 0; display: flex; align-items: center; justify-content: center; padding: 0; flex: none; }
+  .np-secondary { margin-block-start: 8px; display: flex; align-items: center; justify-content: space-between; }
+
+  /* Library */
+  .lib-head { flex: none; padding: 13px 16px 13px; }
+  .pivot { display: flex; align-items: center; gap: 4px; }
+  .pivot h1 { margin: 0; font-size: 40px; line-height: .95; font-weight: 800; letter-spacing: -.02em; text-transform: uppercase; flex: 1; min-inline-size: 0; }
+  .pivot .ibtn { inline-size: 48px; block-size: 48px; color: var(--muted); }
+  .lib-meta { margin-block-start: 8px; display: flex; gap: 13px; font: 10px/1 var(--mono); letter-spacing: .1em; text-transform: uppercase; color: var(--muted); }
+
+  .grid { display: grid; gap: 0; border-block-start: 1px solid var(--line); border-block-end: 1px solid var(--line); overflow: hidden; }
+  .grid.two { grid-template-columns: 1fr 1fr; }
+  .grid.three { grid-template-columns: 1fr 1fr 1fr; }
+  .cell { position: relative; min-inline-size: 0; border-block-end: 1px solid var(--line); }
+  .grid.two .cell:nth-child(odd) { border-inline-end: 1px solid var(--line); }
+  .grid.three .cell:not(:nth-child(3n)) { border-inline-end: 1px solid var(--line); }
+  .cell .art { inline-size: 100%; aspect-ratio: 1; display: block; }
+  .cell-text { padding: 10px 12px 12px; }
+  .cell-title { display: block; font-size: 17px; line-height: 1.15; font-weight: 700; letter-spacing: -.01em; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .cell-meta { display: block; margin-block-start: 3px; font-size: 12px; line-height: 1.3; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .cell.featured { grid-column: span 2; border-inline-end: 0; }
+  .cell.featured .art { aspect-ratio: auto; block-size: 238px; }
+  .cell.featured .cell-text { display: flex; align-items: baseline; gap: 10px; padding: 13px 16px 16px; }
+  .cell.featured .cell-title { font-size: 25px; letter-spacing: -.02em; }
+  .cell.featured .cell-meta { margin: 0; margin-inline-start: auto; }
+  .cell.featured { box-shadow: inset 0 0 0 2px var(--accent); }
+  .cell .playing-bar { position: absolute; inset-block-start: 0; inset-inline-start: 0; inline-size: 4px; block-size: 38%; background: var(--accent); }
+  .grid.three .cell-title { font-size: 14px; }
+  .grid.three .cell-meta { font-size: 11px; }
+  .grid.three .cell-text { padding: 8px 10px 10px; }
+
+  .list { flex: 1; min-block-size: 0; overflow: hidden; border-block-start: 1px solid var(--line); }
+  .row { display: flex; align-items: center; gap: 12px; min-block-size: 72px; border-block-end: 1px solid var(--line); position: relative; }
+  .row.is-on { background: var(--panel); }
+  .row.is-on::before { content: ""; position: absolute; inset-block: 0; inset-inline-start: 0; inline-size: 4px; background: var(--accent); }
+  .row .art { inline-size: 56px; block-size: 56px; margin-inline-start: 12px; flex: none; }
+  .row-text { flex: 1; min-inline-size: 0; padding-inline: 2px; }
+  .row-title { display: block; font-size: 16px; line-height: 1.2; font-weight: 700; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .row-meta { display: block; margin-block-start: 2px; font-size: 12px; line-height: 1.2; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .row-dur { font: 10px/1 var(--mono); color: var(--muted); }
+  .row .ibtn { inline-size: 48px; block-size: 48px; }
+
+  .mini { flex: none; background: var(--panel); border-block-start: 1px solid var(--line); }
+  .mini-progress { block-size: 3px; background: var(--line); }
+  .mini-progress > span { display: block; block-size: 100%; inline-size: 32%; background: var(--accent); }
+  .mini-row { block-size: 73px; display: flex; align-items: center; }
+  .mini-row .art { inline-size: 64px; block-size: 64px; flex: none; }
+  .mini-text { flex: 1; min-inline-size: 0; padding-inline: 12px; }
+  .mini-title { display: block; font-size: 15px; font-weight: 700; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .mini-meta { display: block; margin-block-start: 2px; font-size: 11px; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .mini-row .ibtn { inline-size: 48px; }
+
+  /* Flat album art, drawn as content, never as UI chrome. */
+  .art { position: relative; overflow: hidden; display: block; background: #222; }
+  .art::before, .art::after { content: ""; position: absolute; display: block; }
+  .art--lowtide { background: #17403d; }
+  .art--lowtide::before { inset-inline: 12%; inset-block-start: 22%; block-size: 16%; background: #d7dfc9; }
+  .art--lowtide::after { inline-size: 38%; aspect-ratio: 1; border-radius: 50%; background: #e6c48a; inset-inline-end: 14%; inset-block-end: 16%; }
+  .art--fieldnotes { background: #b99a78; }
+  .art--fieldnotes::before { inset: 12%; border: 1px solid #3b2d24; }
+  .art--fieldnotes::after { inline-size: 26%; aspect-ratio: 1; border-radius: 50%; background: #3b2d24; inset-inline-start: 18%; inset-block-start: 18%; }
+  .art--paperradio { background: #e8e0ce; }
+  .art--paperradio::before { inset-inline: 16%; inset-block-start: 30%; block-size: 40%; background: #c2473b; }
+  .art--paperradio::after { inset-inline: 16%; inset-block-end: 12%; block-size: 2px; background: #181818; }
+  .art--quiethours { background: #17233c; }
+  .art--quiethours::before { inset-block: 16%; inset-inline-start: 22%; inline-size: 12%; background: #8d99ae; }
+  .art--quiethours::after { inset-block: 16%; inset-inline-end: 22%; inline-size: 12%; background: #5b6b8c; }
+  .art--saltair { background: #b9d8d6; }
+  .art--saltair::before { inline-size: 56%; aspect-ratio: 1; border-radius: 50%; border: 1px solid #1d3557; inset-inline-start: 22%; inset-block-start: 22%; }
+  .art--saltair::after { inline-size: 26%; aspect-ratio: 1; border-radius: 50%; background: #1d3557; inset-inline-start: 37%; inset-block-start: 37%; }
+  .art--nightferry { background: #101010; }
+  .art--nightferry::before { inset-inline: 0; inset-block-start: 46%; block-size: 12%; background: #e0b07a; }
+  .art--nightferry::after { inline-size: 22%; aspect-ratio: 1; border-radius: 50%; background: #e0b07a; inset-inline-end: 18%; inset-block-start: 18%; }
+
+  :where(button, a, [tabindex]):focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+  @media (max-width: 1700px) { .board { grid-template-columns: repeat(2, 390px); } }
+  @media (max-width: 860px) {
+    .page-heading { padding-inline: 16px; }
+    .board { grid-template-columns: 390px; padding-inline: 16px; gap: 32px; }
+  }
+</style>
+</head>
+<body>
+
+<svg xmlns="http://www.w3.org/2000/svg" style="position:absolute;inline-size:0;block-size:0;overflow:hidden" aria-hidden="true">
+  <symbol id="i-play" viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></symbol>
+  <symbol id="i-pause" viewBox="0 0 24 24"><path d="M6 19h4V5H6v14zm8-14v14h4V5h-4z"/></symbol>
+  <symbol id="i-next" viewBox="0 0 24 24"><path d="M6 18l8.5-6L6 6v12zM16 6v12h2V6h-2z"/></symbol>
+  <symbol id="i-prev" viewBox="0 0 24 24"><path d="M6 6h2v12H6zm3.5 6l8.5 6V6z"/></symbol>
+  <symbol id="i-heart" viewBox="0 0 24 24"><path d="M16.5 3c-1.74 0-3.41.81-4.5 2.09C10.91 3.81 9.24 3 7.5 3 4.42 3 2 5.42 2 8.5c0 3.78 3.4 6.86 8.55 11.54L12 21.35l1.45-1.32C18.6 15.36 22 12.28 22 8.5 22 5.42 19.58 3 16.5 3zm-4.4 15.55l-.1.1-.1-.1C7.14 14.24 4 11.39 4 8.5 4 6.5 5.5 5 7.5 5c1.54 0 3.04.99 3.57 2.36h1.87C13.46 5.99 14.96 5 16.5 5c2 0 3.5 1.5 3.5 3.5 0 2.89-3.14 5.74-7.9 10.05z"/></symbol>
+  <symbol id="i-queue" viewBox="0 0 24 24"><path d="M15,6H3v2h12V6z M15,10H3v2h12V10z M3,16h8v-2H3V16z M17,6v8.18C16.69,14.07,16.35,14,16,14c-1.66,0-3,1.34-3,3s1.34,3,3,3s3-1.34,3-3V8h3V6H17z"/></symbol>
+  <symbol id="i-lyrics" viewBox="0 0 24 24"><path d="M14,9c0-2.04,1.24-3.79,3-4.57V4c0-1.1-0.9-2-2-2H4C2.9,2,2.01,2.9,2.01,4L2,22l4-4h9c1.1,0,2-0.9,2-2v-2.42C15.24,12.8,14,11.05,14,9z M10,14H6v-2h4V14z M13,11H6V9h7V11z M13,8H6V6h7V8z"/><path d="M20,6.18C19.69,6.07,19.35,6,19,6c-1.66,0-3,1.34-3,3c0,1.66,1.34,3,3,3s3-1.34,3-3V3h2V1h-4V6.18z"/></symbol>
+  <symbol id="i-more" viewBox="0 0 24 24"><path d="M12 8c1.1 0 2-.9 2-2s-.9-2-2-2-2 .9-2 2 .9 2 2 2zm0 2c-1.1 0-2 .9-2 2s.9 2 2 2 2-.9 2-2-.9-2-2-2zm0 6c-1.1 0-2 .9-2 2s.9 2 2 2 2-.9 2-2-.9-2-2-2z"/></symbol>
+  <symbol id="i-search" viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19l-4.99-5zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14z"/></symbol>
+  <symbol id="i-back" viewBox="0 0 24 24"><path d="M20 11H7.83l5.59-5.59L12 4l-8 8 8 8 1.41-1.41L7.83 13H20v-2z"/></symbol>
+  <symbol id="i-grid" viewBox="0 0 24 24"><path d="M14.67,5v6.5H9.33V5H14.67z M15.67,11.5H21V5h-5.33V11.5z M14.67,19v-6.5H9.33V19H14.67z M15.67,12.5V19H21v-6.5H15.67z M8.33,12.5H3V19h5.33V12.5z M8.33,11.5V5H3v6.5H8.33z"/></symbol>
+  <symbol id="i-list" viewBox="0 0 24 24"><path d="M3,14h4v-4H3V14z M3,19h4v-4H3V19z M3,9h4V5H3V9z M8,14h13v-4H8V14z M8,19h13v-4H8V19z M8,5v4h13V5H8z"/></symbol>
+  <symbol id="i-shuffle" viewBox="0 0 24 24"><path d="M10.59 9.17L5.41 4 4 5.41l5.17 5.17 1.42-1.41zM14.5 4l2.04 2.04L4 18.59 5.41 20 17.96 7.46 20 9.5V4h-5.5zm.33 9.41l-1.41 1.41 3.13 3.13L14.5 20H20v-5.5l-2.04 2.04-3.13-3.13z"/></symbol>
+  <symbol id="i-repeat" viewBox="0 0 24 24"><path d="M7 7h10v3l4-4-4-4v3H5v6h2V7zm10 10H7v-3l-4 4 4 4v-3h12v-6h-2v4z"/></symbol>
+  <symbol id="i-chev-left" viewBox="0 0 24 24"><path d="M15.41 7.41L14 6l-6 6 6 6 1.41-1.41L10.83 12z"/></symbol>
+  <symbol id="i-chev-right" viewBox="0 0 24 24"><path d="M10 6L8.59 7.41 13.17 12l-4.58 4.59L10 18l6-6z"/></symbol>
+  <symbol id="i-sort" viewBox="0 0 24 24"><path d="M16 17.01V10h-2v7.01h-3L15 21l4-3.99h-3zM9 3L5 6.99h3V14h2V6.99h3L9 3z"/></symbol>
+</svg>
+
+<header class="page-heading">
+  <p class="kicker">Relay / default view</p>
+  <h1>Zune bones, Relay anatomy</h1>
+  <p class="dek">Now Playing uses a 61.8 / 38.2 vertical split, full-bleed bordered art, 40/25/16 type growth and 48dp icon actions. Library, 3-up and list are the same hierarchy at smaller art sizes.</p>
+</header>
+
+<main class="board">
+
+  <article class="block">
+    <div class="phone">
+      <div class="top">
+        <button class="ibtn" aria-label="Back to library"><svg class="icon"><use href="#i-back"/></svg></button>
+        <span class="top-title">Now playing</span>
+        <button class="ibtn" aria-label="More"><svg class="icon"><use href="#i-more"/></svg></button>
+      </div>
+      <div class="np-main">
+        <div class="np-art"><div class="np-art-layer art art--lowtide"></div></div>
+        <div class="np-info">
+          <span class="np-kicker">Low Tide · 2004</span>
+          <h2 class="np-title">Salt Air</h2>
+          <p class="np-artist">Harbor Lights</p>
+          <div class="np-progress"><span></span></div>
+          <div class="np-times"><span>1:12</span><span>3:42</span></div>
+          <div class="np-controls">
+            <button class="ibtn muted" aria-label="Shuffle"><svg class="icon"><use href="#i-shuffle"/></svg></button>
+            <button class="ibtn" aria-label="Previous"><svg class="icon icon-28"><use href="#i-prev"/></svg></button>
+            <button class="play-big" aria-label="Pause"><svg class="icon icon-36"><use href="#i-pause"/></svg></button>
+            <button class="ibtn" aria-label="Next"><svg class="icon icon-28"><use href="#i-next"/></svg></button>
+            <button class="ibtn muted" aria-label="Repeat"><svg class="icon"><use href="#i-repeat"/></svg></button>
+          </div>
+          <div class="np-secondary">
+            <button class="ibtn" aria-label="Save"><svg class="icon"><use href="#i-heart"/></svg></button>
+            <button class="ibtn" aria-label="Queue"><svg class="icon"><use href="#i-queue"/></svg></button>
+            <button class="ibtn" aria-label="Lyrics"><svg class="icon"><use href="#i-lyrics"/></svg></button>
+            <button class="ibtn" aria-label="More"><svg class="icon"><use href="#i-more"/></svg></button>
+          </div>
+        </div>
+      </div>
+    </div>
+    <p class="caption">Default · now playing</p>
+  </article>
+
+  <article class="block">
+    <div class="phone">
+      <div class="top top-lib">
+        <span class="brand">Collection</span>
+        <span class="top-actions">
+          <button class="ibtn" aria-label="Search"><svg class="icon"><use href="#i-search"/></svg></button>
+          <button class="ibtn accent" aria-label="Grid view"><svg class="icon"><use href="#i-grid"/></svg></button>
+          <button class="ibtn" aria-label="Sort"><svg class="icon"><use href="#i-sort"/></svg></button>
+          <button class="ibtn" aria-label="More"><svg class="icon"><use href="#i-more"/></svg></button>
+        </span>
+      </div>
+      <div class="lib-head">
+        <div class="pivot">
+          <button class="ibtn" aria-label="Previous view"><svg class="icon"><use href="#i-chev-left"/></svg></button>
+          <h1>Albums</h1>
+          <button class="ibtn" aria-label="Next view"><svg class="icon"><use href="#i-chev-right"/></svg></button>
+        </div>
+        <div class="lib-meta"><span>6 albums</span><span>2-up · featured</span></div>
+      </div>
+      <div class="grid two">
+        <div class="cell featured">
+          <span class="art art--lowtide"></span>
+          <div class="cell-text"><span class="cell-title">Low Tide</span><span class="cell-meta">Harbor Lights · 2004</span></div>
+        </div>
+        <div class="cell"><span class="art art--fieldnotes"></span><div class="cell-text"><span class="cell-title">Field Notes</span><span class="cell-meta">North Signal · 2019</span></div></div>
+        <div class="cell"><span class="art art--paperradio"></span><div class="cell-text"><span class="cell-title">Paper Radio</span><span class="cell-meta">Sable Coast · 2022</span></div></div>
+        <div class="cell"><span class="art art--quiethours"></span><div class="cell-text"><span class="cell-title">The Quiet Hours</span><span class="cell-meta">Harbor Lights · 2011</span></div></div>
+        <div class="cell"><span class="art art--saltair"></span><div class="cell-text"><span class="cell-title">Salt Air</span><span class="cell-meta">Harbor Lights · 2007</span></div></div>
+        <div class="cell"><span class="art art--nightferry"></span><div class="cell-text"><span class="cell-title">Night Ferry</span><span class="cell-meta">North Signal · 2015</span></div></div>
+      </div>
+      <div class="mini">
+        <div class="mini-progress"><span></span></div>
+        <div class="mini-row">
+          <span class="art art--lowtide"></span>
+          <div class="mini-text"><span class="mini-title">Salt Air</span><span class="mini-meta">Harbor Lights</span></div>
+          <button class="ibtn" aria-label="Previous"><svg class="icon"><use href="#i-prev"/></svg></button>
+          <button class="ibtn" aria-label="Pause"><svg class="icon"><use href="#i-pause"/></svg></button>
+          <button class="ibtn" aria-label="Next"><svg class="icon"><use href="#i-next"/></svg></button>
+          <button class="ibtn" aria-label="Save"><svg class="icon"><use href="#i-heart"/></svg></button>
+        </div>
+      </div>
+    </div>
+    <p class="caption">Library · 2-up with featured art</p>
+  </article>
+
+  <article class="block">
+    <div class="phone">
+      <div class="top top-lib">
+        <span class="brand">Collection</span>
+        <span class="top-actions">
+          <button class="ibtn" aria-label="Search"><svg class="icon"><use href="#i-search"/></svg></button>
+          <button class="ibtn accent" aria-label="Grid view"><svg class="icon"><use href="#i-grid"/></svg></button>
+          <button class="ibtn" aria-label="Sort"><svg class="icon"><use href="#i-sort"/></svg></button>
+          <button class="ibtn" aria-label="More"><svg class="icon"><use href="#i-more"/></svg></button>
+        </span>
+      </div>
+      <div class="lib-head">
+        <div class="pivot">
+          <button class="ibtn" aria-label="Previous view"><svg class="icon"><use href="#i-chev-left"/></svg></button>
+          <h1>Albums</h1>
+          <button class="ibtn" aria-label="Next view"><svg class="icon"><use href="#i-chev-right"/></svg></button>
+        </div>
+        <div class="lib-meta"><span>9 albums</span><span>3-up</span></div>
+      </div>
+      <div class="grid three">
+        <div class="cell"><span class="art art--lowtide"></span><div class="cell-text"><span class="cell-title">Low Tide</span><span class="cell-meta">Harbor Lights</span></div></div>
+        <div class="cell"><span class="art art--fieldnotes"></span><div class="cell-text"><span class="cell-title">Field Notes</span><span class="cell-meta">North Signal</span></div></div>
+        <div class="cell"><span class="art art--paperradio"></span><div class="cell-text"><span class="cell-title">Paper Radio</span><span class="cell-meta">Sable Coast</span></div></div>
+        <div class="cell"><span class="art art--quiethours"></span><div class="cell-text"><span class="cell-title">The Quiet Hours</span><span class="cell-meta">Harbor Lights</span></div></div>
+        <div class="cell"><span class="art art--saltair"></span><div class="cell-text"><span class="cell-title">Salt Air</span><span class="cell-meta">Harbor Lights</span></div></div>
+        <div class="cell"><span class="art art--nightferry"></span><div class="cell-text"><span class="cell-title">Night Ferry</span><span class="cell-meta">North Signal</span></div></div>
+        <div class="cell"><span class="art art--nightferry"></span><div class="cell-text"><span class="cell-title">Harbor Glass</span><span class="cell-meta">Sable Coast</span></div></div>
+        <div class="cell"><span class="art art--saltair"></span><div class="cell-text"><span class="cell-title">Moth Season</span><span class="cell-meta">North Signal</span></div></div>
+        <div class="cell"><span class="art art--quiethours"></span><div class="cell-text"><span class="cell-title">Low Season</span><span class="cell-meta">Harbor Lights</span></div></div>
+      </div>
+      <div class="mini">
+        <div class="mini-progress"><span></span></div>
+        <div class="mini-row">
+          <span class="art art--lowtide"></span>
+          <div class="mini-text"><span class="mini-title">Salt Air</span><span class="mini-meta">Harbor Lights</span></div>
+          <button class="ibtn" aria-label="Previous"><svg class="icon"><use href="#i-prev"/></svg></button>
+          <button class="ibtn" aria-label="Pause"><svg class="icon"><use href="#i-pause"/></svg></button>
+          <button class="ibtn" aria-label="Next"><svg class="icon"><use href="#i-next"/></svg></button>
+          <button class="ibtn" aria-label="Save"><svg class="icon"><use href="#i-heart"/></svg></button>
+        </div>
+      </div>
+    </div>
+    <p class="caption">Library · 3-up</p>
+  </article>
+
+  <article class="block">
+    <div class="phone">
+      <div class="top top-lib">
+        <span class="brand">Collection</span>
+        <span class="top-actions">
+          <button class="ibtn" aria-label="Search"><svg class="icon"><use href="#i-search"/></svg></button>
+          <button class="ibtn accent" aria-label="List view"><svg class="icon"><use href="#i-list"/></svg></button>
+          <button class="ibtn" aria-label="Sort"><svg class="icon"><use href="#i-sort"/></svg></button>
+          <button class="ibtn" aria-label="More"><svg class="icon"><use href="#i-more"/></svg></button>
+        </span>
+      </div>
+      <div class="lib-head">
+        <div class="pivot">
+          <button class="ibtn" aria-label="Previous view"><svg class="icon"><use href="#i-chev-left"/></svg></button>
+          <h1>Songs</h1>
+          <button class="ibtn" aria-label="Next view"><svg class="icon"><use href="#i-chev-right"/></svg></button>
+        </div>
+        <div class="lib-meta"><span>8 tracks</span><span>list</span></div>
+      </div>
+      <div class="list">
+        <div class="row is-on"><span class="art art--lowtide"></span><span class="row-text"><span class="row-title">Salt Air</span><span class="row-meta">Harbor Lights — Low Tide</span></span><span class="row-dur">03:42</span><button class="ibtn" aria-label="More"><svg class="icon"><use href="#i-more"/></svg></button></div>
+        <div class="row"><span class="art art--lowtide"></span><span class="row-text"><span class="row-title">Slow Return</span><span class="row-meta">Harbor Lights — Low Tide</span></span><span class="row-dur">04:18</span><button class="ibtn" aria-label="More"><svg class="icon"><use href="#i-more"/></svg></button></div>
+        <div class="row"><span class="art art--lowtide"></span><span class="row-text"><span class="row-title">Tape Hiss</span><span class="row-meta">Harbor Lights — Low Tide</span></span><span class="row-dur">02:57</span><button class="ibtn" aria-label="More"><svg class="icon"><use href="#i-more"/></svg></button></div>
+        <div class="row"><span class="art art--lowtide"></span><span class="row-text"><span class="row-title">Low Tide</span><span class="row-meta">Harbor Lights — Low Tide</span></span><span class="row-dur">05:06</span><button class="ibtn" aria-label="More"><svg class="icon"><use href="#i-more"/></svg></button></div>
+        <div class="row"><span class="art art--lowtide"></span><span class="row-text"><span class="row-title">Signal Fires</span><span class="row-meta">Harbor Lights — Low Tide</span></span><span class="row-dur">03:31</span><button class="ibtn" aria-label="More"><svg class="icon"><use href="#i-more"/></svg></button></div>
+        <div class="row"><span class="art art--lowtide"></span><span class="row-text"><span class="row-title">Paper Lanterns</span><span class="row-meta">Harbor Lights — Low Tide</span></span><span class="row-dur">04:02</span><button class="ibtn" aria-label="More"><svg class="icon"><use href="#i-more"/></svg></button></div>
+        <div class="row"><span class="art art--lowtide"></span><span class="row-text"><span class="row-title">Northbound</span><span class="row-meta">Harbor Lights — Low Tide</span></span><span class="row-dur">03:48</span><button class="ibtn" aria-label="More"><svg class="icon"><use href="#i-more"/></svg></button></div>
+        <div class="row"><span class="art art--lowtide"></span><span class="row-text"><span class="row-title">Harbor Lights</span><span class="row-meta">Harbor Lights — Low Tide</span></span><span class="row-dur">05:12</span><button class="ibtn" aria-label="More"><svg class="icon"><use href="#i-more"/></svg></button></div>
+      </div>
+      <div class="mini">
+        <div class="mini-progress"><span></span></div>
+        <div class="mini-row">
+          <span class="art art--lowtide"></span>
+          <div class="mini-text"><span class="mini-title">Salt Air</span><span class="mini-meta">Harbor Lights</span></div>
+          <button class="ibtn" aria-label="Previous"><svg class="icon"><use href="#i-prev"/></svg></button>
+          <button class="ibtn" aria-label="Pause"><svg class="icon"><use href="#i-pause"/></svg></button>
+          <button class="ibtn" aria-label="Next"><svg class="icon"><use href="#i-next"/></svg></button>
+          <button class="ibtn" aria-label="Save"><svg class="icon"><use href="#i-heart"/></svg></button>
+        </div>
+      </div>
+    </div>
+    <p class="caption">Library · list</p>
+  </article>
+
+</main>
+
+<p class="foot">Icons: Material Icons, Apache-2.0.</p>
+
+</body>
+</html>

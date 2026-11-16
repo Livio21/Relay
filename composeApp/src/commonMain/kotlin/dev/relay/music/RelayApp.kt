@@ -121,6 +121,8 @@ data class PlayTogetherUiState(
 /** User intents emitted by the shared UI. Platform hosts decide how each intent is fulfilled. */
 data class RelayAppActions(
     val onTrackSelected: (Track) -> Unit,
+    /** Plays a specific list (album or artist) at [startIndex]; falls back to [onTrackSelected] when absent. */
+    val onPlayTracks: ((List<Track>, Int) -> Unit)? = null,
     val onPlayPause: () -> Unit,
     val onPrevious: () -> Unit,
     val onNext: () -> Unit,

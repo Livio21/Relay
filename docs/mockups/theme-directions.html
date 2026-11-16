@@ -1,0 +1,479 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="color-scheme" content="dark light">
+<title>Relay — theme directions</title>
+<style>
+  :root {
+    --ink: #050505;
+    --panel: #101010;
+    --line: #303030;
+    --paper: #f1f1ec;
+    --muted: #92928b;
+    --signal: #4b88ff;
+    --sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+    --mono: ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace;
+  }
+
+  * { box-sizing: border-box; }
+  html { background: #171717; }
+  body {
+    margin: 0;
+    background: #171717;
+    color: var(--paper);
+    font-family: var(--sans);
+    -webkit-font-smoothing: antialiased;
+    overflow-wrap: anywhere;
+  }
+
+  .page-heading {
+    max-inline-size: 2200px;
+    margin-inline: auto;
+    padding: 40px 32px 8px;
+  }
+
+  .kicker {
+    margin: 0 0 8px;
+    font: 11px/1 var(--mono);
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--muted);
+  }
+
+  .page-heading h1 {
+    margin: 0;
+    font-size: 28px;
+    line-height: 1.1;
+    font-weight: 700;
+    letter-spacing: 0.02em;
+    text-wrap: balance;
+  }
+
+  .dek {
+    max-inline-size: 72ch;
+    margin: 8px 0 0;
+    font-size: 12px;
+    line-height: 1.5;
+    color: var(--muted);
+  }
+
+  .board {
+    max-inline-size: 2200px;
+    margin-inline: auto;
+    padding: 24px 32px 40px;
+    display: grid;
+    grid-template-columns: repeat(5, 390px);
+    gap: 40px 28px;
+    justify-content: center;
+    align-items: start;
+  }
+
+  .block { display: flex; flex-direction: column; gap: 10px; }
+
+  .phone {
+    inline-size: 390px;
+    block-size: 844px;
+    border: 1px solid #333;
+    position: relative;
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+  }
+
+  .caption {
+    margin: 0;
+    font: 11px/1 var(--mono);
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    color: var(--muted);
+  }
+
+  .art { position: relative; overflow: hidden; display: block; background: #222; }
+  .art::before, .art::after { content: ""; position: absolute; display: block; }
+
+  .art--lowtide { background: #17403d; }
+  .art--lowtide::before { inset-inline: 12%; inset-block-start: 22%; block-size: 16%; background: #d7dfc9; }
+  .art--lowtide::after { inline-size: 38%; aspect-ratio: 1; border-radius: 50%; background: #e6c48a; inset-inline-end: 14%; inset-block-end: 16%; }
+
+  .art--fieldnotes { background: #b99a78; }
+  .art--fieldnotes::before { inset: 12%; border: 1px solid #3b2d24; }
+  .art--fieldnotes::after { inline-size: 26%; aspect-ratio: 1; border-radius: 50%; background: #3b2d24; inset-inline-start: 18%; inset-block-start: 18%; }
+
+  .art--paperradio { background: #e8e0ce; }
+  .art--paperradio::before { inset-inline: 16%; inset-block-start: 30%; block-size: 40%; background: #c2473b; }
+  .art--paperradio::after { inset-inline: 16%; inset-block-end: 12%; block-size: 2px; background: #181818; }
+
+  .art--quiethours { background: #17233c; }
+  .art--quiethours::before { inset-block: 16%; inset-inline-start: 22%; inline-size: 12%; background: #8d99ae; }
+  .art--quiethours::after { inset-block: 16%; inset-inline-end: 22%; inline-size: 12%; background: #5b6b8c; }
+
+  .art--saltair { background: #b9d8d6; }
+  .art--saltair::before { inline-size: 56%; aspect-ratio: 1; border-radius: 50%; border: 1px solid #1d3557; inset-inline-start: 22%; inset-block-start: 22%; }
+  .art--saltair::after { inline-size: 26%; aspect-ratio: 1; border-radius: 50%; background: #1d3557; inset-inline-start: 37%; inset-block-start: 37%; }
+
+  /* ---------- Zune direction ---------- */
+  .zune { background: #0b0b0b; color: #f4f4f4; }
+  .zune-bleed {
+    position: absolute; inset-block-start: -120px; inset-inline-start: -80px;
+    inline-size: 540px; block-size: 540px; filter: blur(56px); opacity: 0.3;
+    background: #17403d; border-radius: 50%;
+  }
+  .zune-bleed::before { content: ""; position: absolute; inset-inline: 12%; inset-block-start: 22%; block-size: 16%; background: #d7dfc9; }
+  .zune-bleed::after { content: ""; position: absolute; inline-size: 38%; aspect-ratio: 1; border-radius: 50%; background: #e6c48a; inset-inline-end: 14%; inset-block-end: 16%; }
+  .zune-content { position: relative; flex: 1; display: flex; flex-direction: column; padding: 18px 16px 0; min-block-size: 0; }
+  .zune-kicker { font: 10px/1 var(--mono); letter-spacing: 2px; color: #ff4f00; text-transform: uppercase; }
+  .zune-title-row { display: flex; align-items: baseline; justify-content: space-between; margin-block-start: 2px; }
+  .zune-title { margin: 0; font-size: 34px; line-height: 1; font-weight: 300; letter-spacing: 2px; text-transform: uppercase; }
+  .zune-arrows { color: #ff4f00; font-size: 20px; letter-spacing: 4px; }
+  .zune-rule { block-size: 1px; background: #ff4f00; opacity: 0.55; margin-block-start: 10px; }
+  .zune-hero { display: flex; gap: 14px; margin-block-start: 16px; align-items: flex-end; }
+  .zune-hero .art { inline-size: 190px; block-size: 190px; flex: none; box-shadow: 0 10px 30px #000; }
+  .zune-hero-text h2 { margin: 0; font-size: 26px; line-height: 1.02; font-weight: 300; letter-spacing: 1.5px; text-transform: uppercase; }
+  .zune-hero-text p { margin: 6px 0 0; font-size: 12px; color: #a8a8a8; }
+  .zune-list { margin-block-start: 16px; border-block-start: 1px solid #2b2b2b; }
+  .zune-row { display: flex; align-items: center; gap: 12px; min-block-size: 52px; border-block-end: 1px solid #2b2b2b; }
+  .zune-row .art { inline-size: 34px; block-size: 34px; flex: none; }
+  .zune-row span { font-size: 14px; letter-spacing: 0.6px; text-transform: uppercase; }
+  .zune-row .year { margin-inline-start: auto; font: 10px/1 var(--mono); color: #a8a8a8; }
+  .zune-row.is-on span { color: #ff4f00; }
+  .zune-player { position: relative; border-block-start: 1px solid #3a3a3a; background: #111; }
+  .zune-progress { block-size: 3px; background: #2a2a2a; }
+  .zune-progress > span { display: block; block-size: 100%; inline-size: 32%; background: #ff4f00; }
+  .zune-now { display: flex; align-items: center; gap: 12px; padding: 10px 16px 0; }
+  .zune-now .art { inline-size: 44px; block-size: 44px; flex: none; }
+  .zune-now-text { flex: 1; min-inline-size: 0; }
+  .zune-now-text strong { display: block; font-size: 14px; font-weight: 400; letter-spacing: 1px; text-transform: uppercase; }
+  .zune-now-text span { display: block; margin-block-start: 2px; font-size: 11px; color: #a8a8a8; }
+  .zune-time { font: 10px/1 var(--mono); color: #a8a8a8; }
+  .zune-transport { display: flex; justify-content: space-between; padding: 6px 24px 12px; font: 10px/1 var(--mono); letter-spacing: 2px; color: #f4f4f4; text-transform: uppercase; }
+  .zune-transport .on { color: #ff4f00; }
+
+  /* ---------- iPod direction ---------- */
+  .ipod { background: #dcdde0; color: #1c1c1e; }
+  .ipod-status { display: flex; justify-content: space-between; padding: 8px 12px; font: 10px/1 var(--mono); color: #5a5e66; letter-spacing: 0.6px; background: #cfd1d5; }
+  .ipod-now { background: #f4f5f6; border-block-end: 1px solid #aeb2b8; padding: 10px 12px 8px; }
+  .ipod-now-top { display: flex; align-items: center; gap: 10px; }
+  .ipod-now .art { inline-size: 56px; block-size: 56px; flex: none; border: 1px solid #aeb2b8; }
+  .ipod-now-text { flex: 1; min-inline-size: 0; }
+  .ipod-now-text strong { display: block; font-size: 14px; font-weight: 600; }
+  .ipod-now-text span { display: block; margin-block-start: 2px; font-size: 11px; color: #5a5e66; }
+  .ipod-now-time { font: 10px/1 var(--mono); color: #5a5e66; }
+  .ipod-progress { margin-block-start: 8px; block-size: 2px; background: #c4c6ca; }
+  .ipod-progress > span { display: block; block-size: 100%; inline-size: 34%; background: #2c6fd6; }
+  .ipod-menu { flex: 1; background: #fff; border-block-end: 1px solid #aeb2b8; min-block-size: 0; overflow: hidden; }
+  .ipod-menu-title { padding: 8px 12px 4px; font: 10px/1 var(--mono); color: #5a5e66; letter-spacing: 0.6px; text-transform: uppercase; }
+  .ipod-row { display: flex; align-items: center; justify-content: space-between; padding: 0 12px; min-block-size: 34px; border-block-end: 1px solid #e3e4e6; font-size: 14px; }
+  .ipod-row .chev { color: #8a8e95; }
+  .ipod-row.is-on { background: #2c6fd6; color: #fff; }
+  .ipod-row.is-on .chev { color: #fff; }
+  .ipod-wheel-wrap { block-size: 220px; display: flex; align-items: center; justify-content: center; background: #dcdde0; }
+  .ipod-wheel {
+    inline-size: 178px; block-size: 178px; border-radius: 50%;
+    border: 1px solid #aeb2b8; background: #e7e8ea; position: relative;
+    box-shadow: 0 4px 10px rgba(0,0,0,0.12);
+  }
+  .ipod-wheel span { position: absolute; font: 9px/1 var(--mono); color: #5a5e66; letter-spacing: 0.4px; }
+  .wheel-menu { inset-block-start: 12px; inset-inline-start: 50%; transform: translateX(-50%); }
+  .wheel-prev { inset-inline-start: 14px; inset-block-start: 50%; transform: translateY(-50%); font-size: 12px !important; }
+  .wheel-next { inset-inline-end: 14px; inset-block-start: 50%; transform: translateY(-50%); font-size: 12px !important; }
+  .wheel-play { inset-block-end: 12px; inset-inline-start: 50%; transform: translateX(-50%); }
+  .wheel-center { inline-size: 62px; block-size: 62px; border-radius: 50%; border: 1px solid #aeb2b8; background: #dcdde0; inset-block-start: 50%; inset-inline-start: 50%; transform: translate(-50%, -50%); }
+
+  /* ---------- Apple Music direction ---------- */
+  .apple { background: #fafafa; color: #1c1c1e; }
+  .apple-bg { position: absolute; inset: 0 0 auto 0; block-size: 400px; background: linear-gradient(180deg, #cfe3de 0%, #eef2ee 52%, #fafafa 100%); }
+  .apple-content { position: relative; flex: 1; display: flex; flex-direction: column; padding: 18px 16px 0; min-block-size: 0; }
+  .apple-top { display: flex; align-items: baseline; justify-content: space-between; }
+  .apple-top h1 { margin: 0; font-size: 30px; line-height: 1; font-weight: 800; letter-spacing: -0.4px; }
+  .apple-edit { font-size: 15px; color: #e01e3c; }
+  .apple-hero { display: flex; flex-direction: column; align-items: center; margin-block-start: 16px; }
+  .apple-hero .art { inline-size: 196px; block-size: 196px; border-radius: 12px; box-shadow: 0 14px 32px rgba(0,0,0,0.22); }
+  .apple-hero h2 { margin: 12px 0 0; font-size: 21px; line-height: 1.1; font-weight: 700; letter-spacing: -0.2px; }
+  .apple-hero p { margin: 3px 0 0; font-size: 13px; color: #6b6b70; }
+  .apple-actions { display: flex; gap: 10px; margin-block-start: 12px; }
+  .apple-pill { min-block-size: 34px; display: inline-flex; align-items: center; padding: 0 16px; border-radius: 999px; font-size: 13px; font-weight: 600; }
+  .apple-pill.primary { background: #e01e3c; color: #fff; }
+  .apple-pill.ghost { border: 1px solid #d8d8dc; color: #1c1c1e; }
+  .apple-tracks { margin-block-start: 14px; border-block-start: 1px solid #e2e2e5; }
+  .apple-track { display: flex; align-items: center; gap: 10px; min-block-size: 50px; border-block-end: 1px solid #e2e2e5; }
+  .apple-track .idx { inline-size: 16px; font-size: 13px; color: #6b6b70; }
+  .apple-track .txt { flex: 1; min-inline-size: 0; }
+  .apple-track strong { display: block; font-size: 14px; font-weight: 500; }
+  .apple-track span { display: block; font-size: 11px; color: #6b6b70; margin-block-start: 1px; }
+  .apple-track .dur { font-size: 11px; color: #6b6b70; }
+  .apple-mini { display: flex; align-items: center; gap: 10px; margin: 0 12px; padding: 8px 10px; background: rgba(255,255,255,0.88); backdrop-filter: blur(18px); border: 1px solid rgba(0,0,0,0.08); border-radius: 14px; box-shadow: 0 8px 24px rgba(0,0,0,0.12); }
+  .apple-mini .art { inline-size: 38px; block-size: 38px; border-radius: 6px; flex: none; }
+  .apple-mini-text { flex: 1; min-inline-size: 0; }
+  .apple-mini-text strong { display: block; font-size: 12px; }
+  .apple-mini-text span { display: block; font-size: 10px; color: #6b6b70; margin-block-start: 1px; }
+  .apple-mini .ctrl { font-size: 16px; color: #1c1c1e; }
+  .apple-tabs { display: grid; grid-template-columns: repeat(4, 1fr); border-block-start: 1px solid #e2e2e5; background: rgba(250,250,250,0.94); backdrop-filter: blur(18px); padding: 6px 0 8px; }
+  .apple-tab { text-align: center; font-size: 10px; color: #6b6b70; }
+  .apple-tab .glyph { display: block; font-size: 18px; margin-block-end: 2px; }
+  .apple-tab.is-on { color: #e01e3c; }
+
+  /* ---------- Spotify direction ---------- */
+  .spotify { background: #121212; color: #fff; }
+  .spotify-top { background: linear-gradient(180deg, #1e3b2e 0%, #121212 100%); padding: 16px 16px 10px; }
+  .spotify-greeting { margin: 0; font-size: 24px; line-height: 1.1; font-weight: 800; letter-spacing: -0.4px; }
+  .spotify-chips { display: flex; gap: 8px; margin-block-start: 10px; }
+  .spotify-chip { padding: 5px 12px; border-radius: 999px; background: rgba(255,255,255,0.12); font-size: 11px; }
+  .spotify-chip.is-on { background: #1db954; color: #07110a; font-weight: 700; }
+  .spotify-section { padding: 8px 16px 0; font-size: 17px; font-weight: 800; letter-spacing: -0.2px; }
+  .spotify-shelf { display: flex; gap: 10px; padding: 10px 16px 4px; }
+  .spotify-card { flex: 1 1 0; min-inline-size: 0; }
+  .spotify-card .art { inline-size: 100%; aspect-ratio: 1; border-radius: 6px; }
+  .spotify-card strong { display: block; margin-block-start: 6px; font-size: 12px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .spotify-card span { display: block; margin-block-start: 2px; font-size: 11px; color: #b3b3b3; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .spotify-list { padding: 8px 16px 0; flex: 1; min-block-size: 0; overflow: hidden; }
+  .spotify-row { display: flex; align-items: center; gap: 10px; min-block-size: 52px; }
+  .spotify-row .art { inline-size: 40px; block-size: 40px; border-radius: 3px; flex: none; }
+  .spotify-row-text { flex: 1; min-inline-size: 0; }
+  .spotify-row-text strong { display: block; font-size: 13px; font-weight: 500; }
+  .spotify-row-text span { display: block; margin-block-start: 2px; font-size: 11px; color: #b3b3b3; }
+  .spotify-row .dur { font-size: 11px; color: #b3b3b3; }
+  .spotify-player { border-block-start: 1px solid #282828; background: #181818; }
+  .spotify-progress { block-size: 2px; background: #3a3a3a; }
+  .spotify-progress > span { display: block; block-size: 100%; inline-size: 30%; background: #1db954; }
+  .spotify-now { display: flex; align-items: center; gap: 10px; padding: 8px 12px; }
+  .spotify-now .art { inline-size: 40px; block-size: 40px; border-radius: 3px; flex: none; }
+  .spotify-now-text { flex: 1; min-inline-size: 0; }
+  .spotify-now-text strong { display: block; font-size: 12px; }
+  .spotify-now-text span { display: block; margin-block-start: 1px; font-size: 10px; color: #b3b3b3; }
+  .spotify-controls { display: flex; align-items: center; gap: 12px; font-size: 16px; }
+  .spotify-tabs { display: grid; grid-template-columns: repeat(3, 1fr); background: #000; padding: 6px 0 8px; }
+  .spotify-tab { text-align: center; font-size: 10px; color: #b3b3b3; }
+  .spotify-tab .glyph { display: block; font-size: 17px; margin-block-end: 2px; }
+  .spotify-tab.is-on { color: #fff; }
+
+  /* ---------- Play Music direction ---------- */
+  .play { background: #fafafa; color: #212121; }
+  .play-top { display: flex; align-items: center; gap: 14px; padding: 10px 14px; background: #fff; border-block-end: 1px solid #e0e0e0; }
+  .play-menu { font-size: 20px; color: #5f6368; }
+  .play-title { flex: 1; font-size: 19px; font-weight: 500; }
+  .play-search { font-size: 18px; color: #5f6368; }
+  .play-banner { position: relative; block-size: 150px; overflow: hidden; background: linear-gradient(120deg, #f6c28b 0%, #ff7043 52%, #c2410c 100%); }
+  .play-banner::before { content: ""; position: absolute; inline-size: 220px; block-size: 220px; border-radius: 50%; background: rgba(255,255,255,0.18); inset-inline-start: -60px; inset-block-start: -70px; }
+  .play-banner::after { content: ""; position: absolute; inline-size: 160px; block-size: 160px; border-radius: 50%; background: rgba(23,64,61,0.28); inset-inline-end: -30px; inset-block-end: -50px; }
+  .play-banner h1 { position: relative; margin: 0; padding: 74px 16px 0; font-size: 28px; font-weight: 500; color: #fff; letter-spacing: 0.2px; }
+  .play-tabs { display: flex; gap: 22px; padding: 0 16px; background: #fff; border-block-end: 1px solid #e0e0e0; }
+  .play-tab { padding: 12px 0 10px; font-size: 12px; letter-spacing: 0.6px; color: #616161; text-transform: uppercase; }
+  .play-tab.is-on { color: #c2410c; border-block-end: 2px solid #c2410c; }
+  .play-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 14px 12px; padding: 14px 16px 0; }
+  .play-card .art { inline-size: 100%; aspect-ratio: 1; border-radius: 2px; }
+  .play-card strong { display: block; margin-block-start: 6px; font-size: 13px; font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .play-card span { display: block; margin-block-start: 1px; font-size: 11px; color: #616161; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .play-player { margin-block-start: auto; background: #fff; border-block-start: 1px solid #e0e0e0; }
+  .play-progress { block-size: 2px; background: #e0e0e0; }
+  .play-progress > span { display: block; block-size: 100%; inline-size: 34%; background: #c2410c; }
+  .play-now { display: flex; align-items: center; gap: 10px; padding: 8px 12px; }
+  .play-now .art { inline-size: 42px; block-size: 42px; border-radius: 2px; flex: none; }
+  .play-now-text { flex: 1; min-inline-size: 0; }
+  .play-now-text strong { display: block; font-size: 12px; }
+  .play-now-text span { display: block; margin-block-start: 1px; font-size: 10px; color: #616161; }
+  .play-ctrl { font-size: 17px; color: #5f6368; }
+
+  @media (max-width: 2140px) {
+    .board { grid-template-columns: repeat(3, 390px); }
+  }
+  @media (max-width: 1280px) {
+    .board { grid-template-columns: repeat(2, 390px); }
+  }
+  @media (max-width: 860px) {
+    .page-heading { padding-inline: 16px; }
+    .board { grid-template-columns: 390px; padding-inline: 16px; gap: 32px; }
+  }
+</style>
+</head>
+<body>
+
+<header class="page-heading">
+  <p class="kicker">Relay / theme directions</p>
+  <h1>One anatomy, five skins</h1>
+  <p class="dek">The same library and player content under five different host-rendered shells. Direction, not a clone: no brand fonts, logos or proprietary assets.</p>
+</header>
+
+<main class="board">
+
+  <!-- Zune -->
+  <article class="block" aria-label="Zune direction">
+    <div class="phone zune">
+      <div class="zune-bleed" aria-hidden="true"></div>
+      <div class="zune-content">
+        <span class="zune-kicker">Music</span>
+        <div class="zune-title-row">
+          <h1 class="zune-title">Albums</h1>
+          <span class="zune-arrows" aria-hidden="true">‹ ›</span>
+        </div>
+        <div class="zune-rule"></div>
+        <div class="zune-hero">
+          <span class="art art--lowtide" aria-hidden="true"></span>
+          <div class="zune-hero-text">
+            <h2>Low Tide</h2>
+            <p>Harbor Lights · 2004</p>
+          </div>
+        </div>
+        <div class="zune-list">
+          <div class="zune-row is-on"><span class="art art--lowtide" aria-hidden="true"></span><span>Low Tide</span><span class="year">2004</span></div>
+          <div class="zune-row"><span class="art art--saltair" aria-hidden="true"></span><span>Salt Air</span><span class="year">2007</span></div>
+          <div class="zune-row"><span class="art art--quiethours" aria-hidden="true"></span><span>The Quiet Hours</span><span class="year">2011</span></div>
+          <div class="zune-row"><span class="art art--fieldnotes" aria-hidden="true"></span><span>Field Notes</span><span class="year">2019</span></div>
+        </div>
+      </div>
+      <div class="zune-player">
+        <div class="zune-progress"><span></span></div>
+        <div class="zune-now">
+          <span class="art art--lowtide" aria-hidden="true"></span>
+          <div class="zune-now-text"><strong>Salt Air</strong><span>Harbor Lights — Low Tide</span></div>
+          <span class="zune-time">1:12 / 3:42</span>
+        </div>
+        <div class="zune-transport"><span>Prev</span><span class="on">Play</span><span>Next</span></div>
+      </div>
+    </div>
+    <p class="caption">Zune direction</p>
+  </article>
+
+  <!-- iPod -->
+  <article class="block" aria-label="iPod direction">
+    <div class="phone ipod">
+      <div class="ipod-status"><span>RELAY</span><span>12:40</span></div>
+      <div class="ipod-now">
+        <div class="ipod-now-top">
+          <span class="art art--lowtide" aria-hidden="true"></span>
+          <div class="ipod-now-text"><strong>Salt Air</strong><span>Harbor Lights</span></div>
+          <span class="ipod-now-time">1:12</span>
+        </div>
+        <div class="ipod-progress"><span></span></div>
+      </div>
+      <div class="ipod-menu">
+        <div class="ipod-menu-title">Music</div>
+        <div class="ipod-row">Playlists <span class="chev">›</span></div>
+        <div class="ipod-row">Artists <span class="chev">›</span></div>
+        <div class="ipod-row is-on">Albums <span class="chev">›</span></div>
+        <div class="ipod-row">Songs <span class="chev">›</span></div>
+        <div class="ipod-row">Settings <span class="chev">›</span></div>
+        <div class="ipod-row">Audiobooks <span class="chev">›</span></div>
+        <div class="ipod-row">Extras <span class="chev">›</span></div>
+        <div class="ipod-row">Now Playing <span class="chev">›</span></div>
+        <div class="ipod-row">Shuffle Songs</div>
+      </div>
+      <div class="ipod-wheel-wrap">
+        <div class="ipod-wheel" aria-label="Click wheel">
+          <span class="wheel-menu">MENU</span>
+          <span class="wheel-prev">◀</span>
+          <span class="wheel-next">▶</span>
+          <span class="wheel-play">▶❚❚</span>
+          <span class="wheel-center"></span>
+        </div>
+      </div>
+    </div>
+    <p class="caption">iPod direction</p>
+  </article>
+
+  <!-- Apple Music -->
+  <article class="block" aria-label="Apple Music direction">
+    <div class="phone apple">
+      <div class="apple-bg" aria-hidden="true"></div>
+      <div class="apple-content">
+        <div class="apple-top"><h1>Library</h1><span class="apple-edit">Edit</span></div>
+        <div class="apple-hero">
+          <span class="art art--lowtide" aria-hidden="true"></span>
+          <h2>Low Tide</h2>
+          <p>Harbor Lights</p>
+          <div class="apple-actions"><span class="apple-pill primary">▶ Play</span><span class="apple-pill ghost">Shuffle</span></div>
+        </div>
+        <div class="apple-tracks">
+          <div class="apple-track"><span class="idx">1</span><div class="txt"><strong>Salt Air</strong><span>Harbor Lights</span></div><span class="dur">3:42</span></div>
+          <div class="apple-track"><span class="idx">2</span><div class="txt"><strong>Slow Return</strong><span>Harbor Lights</span></div><span class="dur">4:18</span></div>
+          <div class="apple-track"><span class="idx">3</span><div class="txt"><strong>Tape Hiss</strong><span>Harbor Lights</span></div><span class="dur">2:57</span></div>
+          <div class="apple-track"><span class="idx">4</span><div class="txt"><strong>Low Tide</strong><span>Harbor Lights</span></div><span class="dur">5:06</span></div>
+          <div class="apple-track"><span class="idx">5</span><div class="txt"><strong>Signal Fires</strong><span>Harbor Lights</span></div><span class="dur">3:31</span></div>
+          <div class="apple-track"><span class="idx">6</span><div class="txt"><strong>Paper Lanterns</strong><span>Harbor Lights</span></div><span class="dur">4:02</span></div>
+        </div>
+      </div>
+      <div class="apple-mini">
+        <span class="art art--lowtide" aria-hidden="true"></span>
+        <div class="apple-mini-text"><strong>Salt Air</strong><span>Harbor Lights</span></div>
+        <span class="ctrl">▶</span>
+      </div>
+      <div class="apple-tabs">
+        <span class="apple-tab is-on"><span class="glyph">▤</span>Library</span>
+        <span class="apple-tab"><span class="glyph">◫</span>Browse</span>
+        <span class="apple-tab"><span class="glyph">◉</span>Radio</span>
+        <span class="apple-tab"><span class="glyph">⌕</span>Search</span>
+      </div>
+    </div>
+    <p class="caption">Apple Music direction</p>
+  </article>
+
+  <!-- Spotify -->
+  <article class="block" aria-label="Spotify direction">
+    <div class="phone spotify">
+      <div class="spotify-top">
+        <h1 class="spotify-greeting">Good evening</h1>
+        <div class="spotify-chips"><span class="spotify-chip is-on">Music</span><span class="spotify-chip">Podcasts</span></div>
+      </div>
+      <div class="spotify-section">Made for you</div>
+      <div class="spotify-shelf">
+        <div class="spotify-card"><span class="art art--lowtide" aria-hidden="true"></span><strong>Low Tide</strong><span>Harbor Lights</span></div>
+        <div class="spotify-card"><span class="art art--fieldnotes" aria-hidden="true"></span><strong>Field Notes</strong><span>North Signal</span></div>
+        <div class="spotify-card"><span class="art art--paperradio" aria-hidden="true"></span><strong>Paper Radio</strong><span>Sable Coast</span></div>
+      </div>
+      <div class="spotify-list">
+        <div class="spotify-row"><span class="art art--lowtide" aria-hidden="true"></span><div class="spotify-row-text"><strong>Salt Air</strong><span>Harbor Lights · Low Tide</span></div><span class="dur">3:42</span></div>
+        <div class="spotify-row"><span class="art art--lowtide" aria-hidden="true"></span><div class="spotify-row-text"><strong>Slow Return</strong><span>Harbor Lights · Low Tide</span></div><span class="dur">4:18</span></div>
+        <div class="spotify-row"><span class="art art--lowtide" aria-hidden="true"></span><div class="spotify-row-text"><strong>Tape Hiss</strong><span>Harbor Lights · Low Tide</span></div><span class="dur">2:57</span></div>
+        <div class="spotify-row"><span class="art art--lowtide" aria-hidden="true"></span><div class="spotify-row-text"><strong>Low Tide</strong><span>Harbor Lights · Low Tide</span></div><span class="dur">5:06</span></div>
+        <div class="spotify-row"><span class="art art--lowtide" aria-hidden="true"></span><div class="spotify-row-text"><strong>Signal Fires</strong><span>Harbor Lights · Low Tide</span></div><span class="dur">3:31</span></div>
+        <div class="spotify-row"><span class="art art--lowtide" aria-hidden="true"></span><div class="spotify-row-text"><strong>Paper Lanterns</strong><span>Harbor Lights · Low Tide</span></div><span class="dur">4:02</span></div>
+      </div>
+      <div class="spotify-player">
+        <div class="spotify-progress"><span></span></div>
+        <div class="spotify-now">
+          <span class="art art--lowtide" aria-hidden="true"></span>
+          <div class="spotify-now-text"><strong>Salt Air</strong><span>Harbor Lights</span></div>
+          <div class="spotify-controls"><span>◀</span><span>▶</span><span>▶</span></div>
+        </div>
+      </div>
+      <div class="spotify-tabs">
+        <span class="spotify-tab is-on"><span class="glyph">⌂</span>Home</span>
+        <span class="spotify-tab"><span class="glyph">⌕</span>Search</span>
+        <span class="spotify-tab"><span class="glyph">▤</span>Your Library</span>
+      </div>
+    </div>
+    <p class="caption">Spotify direction</p>
+  </article>
+
+  <!-- Play Music -->
+  <article class="block" aria-label="Google Play Music direction">
+    <div class="phone play">
+      <div class="play-top"><span class="play-menu" aria-hidden="true">☰</span><span class="play-title">Music</span><span class="play-search" aria-hidden="true">⌕</span></div>
+      <div class="play-banner"><h1>Albums</h1></div>
+      <div class="play-tabs">
+        <span class="play-tab">Recent</span>
+        <span class="play-tab is-on">Albums</span>
+        <span class="play-tab">Artists</span>
+      </div>
+      <div class="play-grid">
+        <div class="play-card"><span class="art art--lowtide" aria-hidden="true"></span><strong>Low Tide</strong><span>Harbor Lights</span></div>
+        <div class="play-card"><span class="art art--fieldnotes" aria-hidden="true"></span><strong>Field Notes</strong><span>North Signal</span></div>
+        <div class="play-card"><span class="art art--paperradio" aria-hidden="true"></span><strong>Paper Radio</strong><span>Sable Coast</span></div>
+        <div class="play-card"><span class="art art--quiethours" aria-hidden="true"></span><strong>The Quiet Hours</strong><span>Harbor Lights</span></div>
+      </div>
+      <div class="play-player">
+        <div class="play-progress"><span></span></div>
+        <div class="play-now">
+          <span class="art art--lowtide" aria-hidden="true"></span>
+          <div class="play-now-text"><strong>Salt Air</strong><span>Harbor Lights</span></div>
+          <span class="play-ctrl">▶</span>
+        </div>
+      </div>
+    </div>
+    <p class="caption">Play Music direction</p>
+  </article>
+
+</main>
+</body>
+</html>

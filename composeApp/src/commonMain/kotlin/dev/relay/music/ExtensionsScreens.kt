@@ -16,6 +16,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.rememberScrollState
@@ -30,12 +31,14 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import coil3.compose.AsyncImage
 import dev.relay.music.extension.EXTENSION_API_VERSION
 import dev.relay.music.extension.ExtensionKind
@@ -62,6 +65,8 @@ import dev.relay.music.update.InstalledComponent
 import dev.relay.music.update.findComponentUpdates
 import dev.relay.music.update.toUpdatableComponentKind
 import dev.relay.music.ui.RelayColors
+import dev.relay.music.ui.RelayIcon
+import dev.relay.music.ui.RelayIcons
 import dev.relay.music.ui.RelayType
 import kotlinx.coroutines.delay
 
@@ -249,36 +254,43 @@ internal fun ExtensionCatalogScreen(
             .verticalScroll(scrollState)
             .padding(16.dp),
     ) {
-        Row(modifier = Modifier.fillMaxWidth()) {
+        Row(modifier = Modifier.fillMaxWidth().padding(top = 8.dp)) {
             ExtensionsTab.entries.forEach { tab ->
-                BasicText(
-                    text = tab.name,
-                    style = RelayType.Utility.copy(
-                        color = if (tab == selectedTab) RelayColors.Signal else RelayColors.Muted,
-                    ),
+                Column(
                     modifier = Modifier
                         .weight(1f)
-                        .heightIn(min = 48.dp)
-                        .border(1.dp, RelayColors.Line)
                         .semantics { contentDescription = "Show ${tab.name.lowercase()} extensions" }
-                        .clickable(role = Role.Tab, onClick = { onTabChange(tab) })
-                        .padding(horizontal = 8.dp, vertical = 16.dp),
-                )
+                        .clickable(role = Role.Tab, onClick = { onTabChange(tab) }),
+                ) {
+                    BasicText(
+                        text = tab.name.lowercase(),
+                        style = RelayType.HeroArtist.copy(
+                            fontSize = 18.sp,
+                            lineHeight = 20.sp,
+                            color = if (tab == selectedTab) RelayColors.Signal else RelayColors.Muted,
+                        ),
+                        maxLines = 1,
+                        modifier = Modifier.padding(vertical = 14.dp),
+                    )
+                    Box(
+                        Modifier
+                            .fillMaxWidth()
+                            .height(2.dp)
+                            .background(if (tab == selectedTab) RelayColors.Signal else Color.Transparent),
+                    )
+                }
             }
         }
-        Row(
-            modifier = Modifier.fillMaxWidth().padding(top = 8.dp),
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
-        ) {
-            TransportAction(
-                label = "REPOSITORIES",
+        Row(modifier = Modifier.fillMaxWidth().padding(top = 8.dp)) {
+            SourceAction(
+                label = "repositories",
                 description = "Manage trusted extension repositories",
                 enabled = true,
                 onClick = onOpenRepositories,
                 modifier = Modifier.weight(1f),
             )
-            TransportAction(
-                label = "REFRESH",
+            SourceAction(
+                label = "refresh",
                 description = "Refresh all trusted extension repositories",
                 enabled = !refreshing,
                 onClick = onRefreshAll,
@@ -294,8 +306,8 @@ internal fun ExtensionCatalogScreen(
         }
         when (selectedTab) {
             ExtensionsTab.SOURCES -> {
-                TransportAction(
-                    label = "GLOBAL SEARCH",
+                SourceAction(
+                    label = "global search",
                     description = "Search every enabled source at once",
                     enabled = true,
                     onClick = onOpenSourceSearch,
@@ -313,22 +325,26 @@ internal fun ExtensionCatalogScreen(
                         val name = installed.catalogSnapshot?.name ?: catalogExtensions.firstOrNull {
                             it.repository.id == installed.repositoryId && it.entry.id == installed.extensionId
                         }?.entry?.name ?: installed.extensionId
-                        Column(
+                        Row(
                             modifier = Modifier
                                 .fillMaxWidth()
-                                .padding(top = 8.dp)
-                                .border(1.dp, RelayColors.Line)
+                                .heightIn(min = 64.dp)
                                 .semantics { contentDescription = "Browse $name" }
                                 .clickable(role = Role.Button) { onBrowseExtension(installed.extensionId) }
-                                .padding(12.dp),
+                                .padding(vertical = 8.dp),
+                            verticalAlignment = Alignment.CenterVertically,
                         ) {
-                            BasicText(name, style = RelayType.Track)
-                            BasicText(
-                                "${installed.version} · BROWSE",
-                                style = RelayType.Metadata,
-                                modifier = Modifier.padding(top = 4.dp),
-                            )
+                            Column(modifier = Modifier.weight(1f)) {
+                                BasicText(name, style = RelayType.HeroArtist.copy(fontSize = 20.sp, lineHeight = 24.sp))
+                                BasicText(
+                                    "${installed.version} · browse",
+                                    style = RelayType.Kicker,
+                                    modifier = Modifier.padding(top = 2.dp),
+                                )
+                            }
+                            RelayIcon(RelayIcons.ChevronRight, null, tint = RelayColors.Muted, size = 20.dp)
                         }
+                        Rule()
                     }
                 }
             }
@@ -423,23 +439,25 @@ private fun CatalogExtensionRow(
     Column(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(top = 8.dp)
-            .border(1.dp, RelayColors.Line)
+            .padding(top = 4.dp)
             .semantics { contentDescription = "Inspect ${extension.entry.name}" }
             .clickable(role = Role.Button) { onClick(extension) }
-            .padding(12.dp),
+            .padding(vertical = 8.dp),
     ) {
-        BasicText(extension.entry.name, style = RelayType.Track)
+        BasicText(
+            extension.entry.name,
+            style = RelayType.HeroArtist.copy(fontSize = 20.sp, lineHeight = 24.sp),
+        )
         BasicText(
             listOfNotNull(
                 extension.entry.version,
-                extension.entry.kind.name.replace('_', ' '),
+                extension.entry.kind.name.replace('_', ' ').lowercase(),
                 extension.repository.name,
-                "INCOMPATIBLE".takeUnless { extension.entry.isCompatible },
-                badge,
+                "incompatible".takeUnless { extension.entry.isCompatible },
+                badge?.lowercase(),
             ).joinToString(" · "),
-            style = RelayType.Metadata,
-            modifier = Modifier.padding(top = 4.dp),
+            style = RelayType.Kicker,
+            modifier = Modifier.padding(top = 2.dp),
         )
         when {
             download != null -> ExtensionDownloadBar(download)
@@ -452,6 +470,7 @@ private fun CatalogExtensionRow(
             )
         }
     }
+    Rule()
 }
 
 @Composable
@@ -471,25 +490,27 @@ private fun InstalledExtensionRow(
     Column(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(top = 8.dp)
-            .border(1.dp, RelayColors.Line)
+            .padding(top = 4.dp)
             .then(
                 if (catalogExtension == null) Modifier else Modifier
                     .semantics { contentDescription = "Inspect ${catalogExtension.entry.name}" }
                     .clickable(role = Role.Button) { onOpen(catalogExtension) },
             )
-            .padding(12.dp),
+            .padding(vertical = 8.dp),
     ) {
-        BasicText(installed.catalogSnapshot?.name ?: catalogExtension?.entry?.name ?: installed.extensionId, style = RelayType.Track)
+        BasicText(
+            installed.catalogSnapshot?.name ?: catalogExtension?.entry?.name ?: installed.extensionId,
+            style = RelayType.HeroArtist.copy(fontSize = 20.sp, lineHeight = 24.sp),
+        )
         BasicText(
             listOfNotNull(
                 installed.version,
-                if (isThemePack) "INSTALLED" else if (installed.enabled) "ENABLED" else "DISABLED",
-                "ORPHANED".takeIf { orphaned },
-                componentUpdate?.candidate?.version?.let { "${componentUpdate.status.displayName()} $it" },
+                if (isThemePack) "installed" else if (installed.enabled) "enabled" else "disabled",
+                "orphaned".takeIf { orphaned },
+                componentUpdate?.candidate?.version?.let { "${componentUpdate.status.displayName().lowercase()} $it" },
             ).joinToString(" · "),
-            style = RelayType.Metadata,
-            modifier = Modifier.padding(top = 4.dp),
+            style = RelayType.Kicker,
+            modifier = Modifier.padding(top = 2.dp),
         )
         installed.disabledReason?.takeUnless { isThemePack }?.let { reason ->
             BasicText(reason, style = RelayType.Metadata, modifier = Modifier.padding(top = 4.dp))
@@ -526,6 +547,7 @@ private fun InstalledExtensionRow(
             )
         }
     }
+    Rule()
 }
 
 private fun ComponentUpdateStatus.displayName(): String = when (this) {
@@ -560,8 +582,8 @@ private fun ExtensionDetailsScreen(
             .verticalScroll(rememberScrollState())
             .padding(16.dp),
     ) {
-        BasicText(extension.entry.name, style = RelayType.Title)
-        BasicText(extension.entry.version, style = RelayType.Track, modifier = Modifier.padding(top = 8.dp))
+        BasicText(extension.entry.name, style = RelayType.HeroTitle)
+        BasicText(extension.entry.version, style = RelayType.Kicker, modifier = Modifier.padding(top = 8.dp))
         ExtensionDetail("TYPE", extension.entry.kind.name.replace('_', ' '))
         ExtensionDetail("REPOSITORY", extension.repository.name)
         ExtensionDetail("API", "${extension.entry.api.minimum}–${extension.entry.api.maximum}")
@@ -685,9 +707,9 @@ private fun SourceSettingsSection(
         schema.isEmpty() -> Unit
         else -> {
             BasicText(
-                "SOURCE SETTINGS",
-                style = RelayType.Utility.copy(color = RelayColors.Muted),
-                modifier = Modifier.padding(top = 24.dp),
+                "source settings",
+                style = RelayType.SectionTitle.copy(fontSize = 28.sp, lineHeight = 30.sp),
+                modifier = Modifier.padding(top = 24.dp, bottom = 4.dp),
             )
             schema.forEach { definition ->
                 val current = values[definition.id] ?: definition.defaultValue
@@ -745,9 +767,20 @@ private fun ExtensionDownloadBar(progress: ExtensionDownloadProgress) {
 
 @Composable
 private fun ExtensionDetail(label: String, value: String) {
-    Column(modifier = Modifier.fillMaxWidth().padding(top = 16.dp)) {
-        BasicText(label, style = RelayType.Utility.copy(color = RelayColors.Muted))
-        BasicText(value, style = RelayType.Metadata, modifier = Modifier.padding(top = 4.dp))
+    Row(
+        modifier = Modifier.fillMaxWidth().padding(top = 14.dp),
+        verticalAlignment = Alignment.Top,
+    ) {
+        BasicText(
+            label.lowercase(),
+            style = RelayType.Kicker,
+            modifier = Modifier.width(112.dp),
+        )
+        BasicText(
+            value,
+            style = RelayType.Metadata.copy(color = RelayColors.Paper),
+            modifier = Modifier.weight(1f),
+        )
     }
 }
 
@@ -981,5 +1014,33 @@ private fun BoxScope.SourceTrackOptionsMenu(
             TransportAction("QUEUE", "Add ${track.title} to the end of the queue", true, onEnqueue, Modifier.weight(1f))
         }
         TransportAction("CLOSE", "Close track options", true, onDismiss, Modifier.fillMaxWidth().padding(top = 8.dp))
+    }
+}
+
+
+@Composable
+private fun SourceAction(
+    label: String,
+    description: String,
+    enabled: Boolean,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    Row(
+        modifier = modifier
+            .heightIn(min = 48.dp)
+            .semantics { contentDescription = description }
+            .clickable(enabled = enabled, role = Role.Button, onClick = onClick),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        BasicText(
+            text = label,
+            style = RelayType.HeroArtist.copy(
+                fontSize = 18.sp,
+                lineHeight = 20.sp,
+                color = if (enabled) RelayColors.Paper else RelayColors.Muted,
+            ),
+            maxLines = 1,
+        )
     }
 }

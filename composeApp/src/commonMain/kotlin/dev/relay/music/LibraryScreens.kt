@@ -44,6 +44,7 @@ import dev.relay.music.model.TrackFlags
 import dev.relay.music.model.resolveEffectiveMetadata
 import dev.relay.music.playback.PlaybackState
 import dev.relay.music.ui.RelayColors
+import dev.relay.music.ui.RelayMarqueeText
 import dev.relay.music.ui.RelayPresentation
 import dev.relay.music.ui.RelayType
 import dev.relay.music.ui.asThemedTitle
@@ -163,19 +164,15 @@ private fun TrackGridCard(
                 Modifier.align(Alignment.BottomStart).fillMaxWidth(progress).height(4.dp).background(RelayColors.Signal),
             )
         }
-        BasicText(
-            effective.display.title,
+        RelayMarqueeText(
+            text = effective.display.title,
             style = RelayType.Track,
-            maxLines = 1,
-            overflow = TextOverflow.Ellipsis,
             modifier = Modifier.fillMaxWidth().padding(start = 12.dp, end = 12.dp, top = 10.dp),
         )
         Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-            BasicText(
-                effective.display.artist,
+            RelayMarqueeText(
+                text = effective.display.artist,
                 style = RelayType.Metadata,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
                 modifier = Modifier.weight(1f).padding(start = 12.dp, bottom = 10.dp),
             )
             BasicText(
@@ -245,18 +242,14 @@ internal fun TrackRow(
                 .weight(1f)
                 .padding(horizontal = 12.dp, vertical = 12.dp),
         ) {
-            BasicText(
+            RelayMarqueeText(
                 text = title.asThemedTitle(),
                 style = RelayType.Track,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
             )
-            BasicText(
+            RelayMarqueeText(
                 text = metadata,
                 style = RelayType.Metadata,
                 modifier = Modifier.padding(top = 4.dp),
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
             )
         }
 
@@ -372,6 +365,8 @@ internal fun LibraryControls(
     resultCount: Int,
     onQueryChange: (String) -> Unit,
     onSortChange: (LibrarySort) -> Unit,
+    resultLabel: String = "TRACKS",
+    showSort: Boolean = true,
 ) {
     Column(modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp)) {
         MetadataField("SEARCH LIBRARY", query, onQueryChange)
@@ -381,16 +376,18 @@ internal fun LibraryControls(
             verticalAlignment = Alignment.CenterVertically,
         ) {
             BasicText(
-                text = "$resultCount TRACKS",
+                text = "$resultCount $resultLabel",
                 style = RelayType.Utility.copy(color = RelayColors.Muted),
                 modifier = Modifier.weight(1f),
             )
-            TransportAction(
-                label = "SORT ${sort.name}",
-                description = "Change library sort order",
-                enabled = true,
-                onClick = { onSortChange(LibrarySort.entries[(sort.ordinal + 1) % LibrarySort.entries.size]) },
-            )
+            if (showSort) {
+                TransportAction(
+                    label = "SORT ${sort.name}",
+                    description = "Change library sort order",
+                    enabled = true,
+                    onClick = { onSortChange(LibrarySort.entries[(sort.ordinal + 1) % LibrarySort.entries.size]) },
+                )
+            }
             if (query.isNotEmpty()) {
                 TransportAction("CLEAR", "Clear the library search", true, { onQueryChange("") })
             }

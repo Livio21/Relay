@@ -33,6 +33,7 @@ import dev.relay.music.ui.relayBorder
 import dev.relay.music.ui.relayButtonBorder
 import dev.relay.music.ui.relayButtonChrome
 import dev.relay.music.ui.relayChrome
+import dev.relay.music.ui.RelayMarqueeText
 
 @Composable
 internal fun TransportAction(
@@ -114,9 +115,12 @@ internal fun TrackOrderRow(
                 modifier = Modifier.width(36.dp).padding(start = 12.dp),
             )
             Column(modifier = Modifier.weight(1f).padding(vertical = 10.dp)) {
-                BasicText(track.title, style = RelayType.Track.copy(color = if (active) RelayColors.Signal else RelayColors.Paper))
-                BasicText(
-                    listOfNotNull(track.artist, track.album).joinToString(" — "),
+                RelayMarqueeText(
+                    text = track.title,
+                    style = RelayType.Track.copy(color = if (active) RelayColors.Signal else RelayColors.Paper),
+                )
+                RelayMarqueeText(
+                    text = listOfNotNull(track.artist, track.album).joinToString(" — "),
                     style = RelayType.Metadata,
                     modifier = Modifier.padding(top = 2.dp),
                 )

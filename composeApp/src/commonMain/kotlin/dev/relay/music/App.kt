@@ -1,18 +1,25 @@
 package dev.relay.music
 
 import androidx.compose.foundation.background
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.slideInVertically
+import androidx.compose.animation.slideOutVertically
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawingPadding
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.setValue
-import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.semantics.contentDescription
-import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.text.font.FontFamily
+import androidx.compose.ui.text.font.FontVariation
+import androidx.compose.ui.text.font.FontWeight
+import org.jetbrains.compose.resources.Font
+import relay.composeapp.generated.resources.Res
+import relay.composeapp.generated.resources.inter_variable
 import dev.relay.music.model.metadataHealth
 import kotlinx.coroutines.launch
 import androidx.compose.foundation.pager.HorizontalPager
@@ -31,15 +38,19 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.draw.blur
+import androidx.compose.ui.draw.clipToBounds
 import dev.relay.music.model.Track
+import dev.relay.music.model.recentlyPlayedTracks
 import dev.relay.music.model.MetadataHealth
 import dev.relay.music.settings.activeShuffleProfile
 import dev.relay.music.wallpaper.WallpaperEditorScreen
 import dev.relay.music.ui.RelayColors
+import dev.relay.music.ui.RelayFonts
 import dev.relay.music.ui.RelayPresentation
 import dev.relay.music.ui.RelayTheme
 import dev.relay.music.ui.RelayType
+import dev.relay.music.ui.RelayIcons
 import dev.relay.music.extension.ThemeBackground
 
 sealed interface LibraryUiState {
@@ -53,11 +64,33 @@ internal fun RelayAppContent(
     state: RelayAppState,
     actions: RelayAppActions,
     modifier: Modifier = Modifier,
+    initialView: Int = NOW_PLAYING_VIEW,
 ) {
-    var navigation by remember { mutableStateOf(RelayNavigationState()) }
+    val thin = Font(Res.font.inter_variable, FontWeight.Thin, variationSettings = FontVariation.Settings(FontVariation.weight(100)))
+    val extraLight = Font(Res.font.inter_variable, FontWeight.ExtraLight, variationSettings = FontVariation.Settings(FontVariation.weight(200)))
+    val light = Font(Res.font.inter_variable, FontWeight.Light, variationSettings = FontVariation.Settings(FontVariation.weight(300)))
+    val normal = Font(Res.font.inter_variable, FontWeight.Normal, variationSettings = FontVariation.Settings(FontVariation.weight(400)))
+    val medium = Font(Res.font.inter_variable, FontWeight.Medium, variationSettings = FontVariation.Settings(FontVariation.weight(500)))
+    val semiBold = Font(Res.font.inter_variable, FontWeight.SemiBold, variationSettings = FontVariation.Settings(FontVariation.weight(600)))
+    val bold = Font(Res.font.inter_variable, FontWeight.Bold, variationSettings = FontVariation.Settings(FontVariation.weight(700)))
+    val extraBold = Font(Res.font.inter_variable, FontWeight.ExtraBold, variationSettings = FontVariation.Settings(FontVariation.weight(800)))
+    val black = Font(Res.font.inter_variable, FontWeight.Black, variationSettings = FontVariation.Settings(FontVariation.weight(900)))
+    val inter = remember(thin, extraLight, light, normal, medium, semiBold, bold, extraBold, black) {
+        FontFamily(thin, extraLight, light, normal, medium, semiBold, bold, extraBold, black)
+    }
+    SideEffect { if (RelayFonts.sans !== inter) RelayFonts.sans = inter }
+    var navigation by remember {
+        mutableStateOf(
+            RelayNavigationState(
+                destination = if (initialView == NOW_PLAYING_VIEW) ROOT_DESTINATION else RelayDestination(initialView),
+            ),
+        )
+    }
     val destination = navigation.destination
     val reviewTrack = destination.reviewTrack
     val selectedPlaylistId = destination.selectedPlaylistId
+    val albumKey = destination.albumKey
+    val artistKey = destination.artistKey
     val settingsSubmenu = destination.settingsSubmenu
     val extensionsSubmenu = destination.extensionsSubmenu
     val extensionsTab = destination.extensionsTab
@@ -70,6 +103,9 @@ internal fun RelayAppContent(
     val openPlaylist = state.playlists.firstOrNull { it.id == selectedPlaylistId }
     var libraryQuery by remember { mutableStateOf("") }
     var librarySort by remember { mutableStateOf(LibrarySort.TITLE) }
+    var libraryBrowse by remember { mutableStateOf(LibraryBrowseMode.ALBUMS) }
+    var libraryDensity by remember { mutableStateOf(LibraryDensity.THREE) }
+    var sectionMenuOpen by remember { mutableStateOf(false) }
     // Keyed so playback position ticks and other unrelated recompositions never re-sort the library.
     val visibleTracks = remember(state.tracks, state.trackFlags) {
         libraryView(state.tracks, state.trackFlags)
@@ -77,12 +113,26 @@ internal fun RelayAppContent(
     val listedTracks = remember(state.tracks, state.trackFlags, libraryQuery, librarySort) {
         libraryView(state.tracks, state.trackFlags, libraryQuery, librarySort)
     }
+    val allAlbums = remember(visibleTracks) { albumGroups(visibleTracks) }
+    val allArtists = remember(visibleTracks) { artistGroups(visibleTracks) }
+    val listedAlbums = remember(allAlbums, libraryQuery) { filterAlbums(allAlbums, libraryQuery) }
+    val listedArtists = remember(allArtists, libraryQuery) { filterArtists(allArtists, libraryQuery) }
+    val recentTracks = remember(state.listeningEvents, visibleTracks) {
+        recentlyPlayedTracks(state.listeningEvents, visibleTracks)
+    }
+    val playingAlbumKey = remember(state.playback.currentTrack, allAlbums) {
+        val playingKey = state.playback.currentTrack?.let(::trackKey) ?: return@remember null
+        allAlbums.firstOrNull { album -> album.tracks.any { trackKey(it) == playingKey } }?.key
+    }
+    val openAlbum = albumKey?.let { key -> allAlbums.firstOrNull { it.key == key } }
+    val openArtist = artistKey?.let { key -> allArtists.firstOrNull { it.key == key } }
     val tracksNeedingMetadata = remember(visibleTracks, state.metadataIgnoredTrackKeys) {
         visibleTracks.filter {
             it.metadataHealth() == MetadataHealth.NEEDS_REVIEW && trackKey(it) !in state.metadataIgnoredTrackKeys
         }
     }
-    val pagerState = rememberPagerState(initialPage = PAGER_START_PAGE) { Int.MAX_VALUE }
+    val pagerStartPage = PAGER_START_PAGE + pagerPageDelta(NOW_PLAYING_VIEW, initialView)
+    val pagerState = rememberPagerState(initialPage = pagerStartPage) { Int.MAX_VALUE }
     val navigationScope = rememberCoroutineScope()
     val currentView = pagerState.currentPage % PAGE_TITLES.size
     var pagerTarget by remember { mutableStateOf<Int?>(null) }
@@ -100,15 +150,30 @@ internal fun RelayAppContent(
         }
     }
     fun navigateTo(next: RelayDestination) {
+        sectionMenuOpen = false
         val updated = navigation.navigate(next)
         if (updated === navigation) return
         navigation = updated
         movePagerTo(next.view)
     }
     fun goBack() {
+        val current = navigation.destination
+        if (current.view == SETTINGS_VIEW && current.settingsSubmenu != null) {
+            // Settings submenus are tabs inside Settings, not a deep history: one back exits
+            // the submenu to the Settings root.
+            navigation = RelayNavigationState(destination = RelayDestination(SETTINGS_VIEW))
+            movePagerTo(SETTINGS_VIEW)
+            return
+        }
         val updated = navigation.back() ?: return
         navigation = updated
         movePagerTo(updated.destination.view)
+    }
+    fun playTracks(tracks: List<Track>, startIndex: Int) {
+        if (tracks.isEmpty()) return
+        val index = startIndex.coerceIn(0, tracks.lastIndex)
+        val play = actions.onPlayTracks
+        if (play != null) play(tracks, index) else tracks.getOrNull(index)?.let(actions.onTrackSelected)
     }
     val isSubmenu = destination.hasSubState
     LaunchedEffect(pagerState.isScrollInProgress, currentView, pagerTarget) {
@@ -123,7 +188,15 @@ internal fun RelayAppContent(
             navigateTo(destination.copy(view = SETTINGS_VIEW, settingsSubmenu = SettingsSubmenu.REPOSITORIES))
         }
     }
-    SideEffect { actions.onBackActionChanged(if (navigation.canGoBack) ::goBack else null) }
+    SideEffect {
+        actions.onBackActionChanged(
+            when {
+                sectionMenuOpen -> ({ sectionMenuOpen = false })
+                navigation.canGoBack -> ::goBack
+                else -> null
+            },
+        )
+    }
 
     RelayTheme(backgroundArtworkUri = state.playback.currentTrack?.artworkUri) {
         BoxWithConstraints(
@@ -150,27 +223,80 @@ internal fun RelayAppContent(
             )
             return@BoxWithConstraints
         }
+        val renderPlayer: @Composable (PlayerLayout, Modifier) -> Unit = { playerLayout, playerModifier ->
+            PlayerSurface(
+                layout = playerLayout,
+                playbackState = state.playback,
+                onPlayPause = actions.onPlayPause,
+                onPrevious = actions.onPrevious,
+                onNext = actions.onNext,
+                onSeekTo = actions.onSeekTo,
+                lyricsText = state.lyricsText.takeIf { state.playback.currentTrack?.let(::trackKey) == state.lyricsTrackKey },
+                lyricsMessage = state.lyricsMessage,
+                onLoadLyrics = actions.onLoadLyrics,
+                onSaveLyrics = actions.onSaveLyrics,
+                onFetchLyrics = actions.onFetchLyrics,
+                shuffleProfileName = state.settings.activeShuffleProfile().name,
+                onShuffleEnabledChange = actions.onShuffleEnabledChange,
+                onRepeatModeChange = actions.onRepeatModeChange,
+                onReshuffle = actions.onShuffleQueue,
+                onOpenShuffleSettings = {
+                    navigateTo(destination.copy(view = SETTINGS_VIEW, settingsSubmenu = SettingsSubmenu.PLAYBACK))
+                },
+                onOpenQueue = { navigateTo(destination.copy(view = NOW_PLAYING_VIEW, queueOpen = true)) },
+                lyricsOpen = lyricsOpen,
+                onToggleLyrics = {
+                    if (lyricsOpen) {
+                        goBack()
+                    } else {
+                        navigateTo(destination.copy(view = NOW_PLAYING_VIEW, lyricsOpen = true, playerOptionsOpen = true))
+                    }
+                },
+                optionsOpen = playerOptionsOpen,
+                onToggleOptions = {
+                    if (playerOptionsOpen) {
+                        goBack()
+                    } else {
+                        navigateTo(destination.copy(view = NOW_PLAYING_VIEW, playerOptionsOpen = true))
+                    }
+                },
+                sleepTimer = state.sleepTimer,
+                onSelectSleepTimer = actions.onSelectSleepTimer,
+                onImportLyricsFile = actions.onImportLyricsFile,
+                onExportLyricsFile = actions.onExportLyricsFile,
+                onOpenNowPlaying = { navigateTo(destination.forView(NOW_PLAYING_VIEW)) },
+                modifier = playerModifier,
+            )
+        }
         Column(
             modifier = Modifier
                 .fillMaxSize()
-                .safeDrawingPadding(),
+                .safeDrawingPadding()
+                .clipToBounds()
+                .then(if (sectionMenuOpen) Modifier.blur(18.dp) else Modifier),
         ) {
             val immersiveCoverFlow = landscape && currentView == NOW_PLAYING_VIEW && !isSubmenu
+            val nowPlayingExpanded = currentView == NOW_PLAYING_VIEW && !queueOpen && !landscape && !isSubmenu
             if (!immersiveCoverFlow) {
-            PageHeading(
-                previousTitle = PAGE_TITLES[(currentView + PAGE_TITLES.size - 1) % PAGE_TITLES.size],
-                title = PAGE_TITLES[currentView],
+            MetroPageHeading(
+                title = when {
+                    albumKey != null -> "ALBUM"
+                    artistKey != null -> "ARTIST"
+                    currentView == NOW_PLAYING_VIEW -> "PLAYING"
+                    currentView == EXTENSIONS_VIEW -> "SOURCES"
+                    else -> PAGE_TITLES[currentView]
+                },
                 nextTitle = PAGE_TITLES[(currentView + 1) % PAGE_TITLES.size],
-                onBack = if (isSubmenu) ::goBack else null,
-                onPrevious = { navigateTo(destination.forView((currentView + PAGE_TITLES.size - 1) % PAGE_TITLES.size)) },
+                onOpenSections = { sectionMenuOpen = true },
                 onNext = { navigateTo(destination.forView((currentView + 1) % PAGE_TITLES.size)) },
+                onBack = if (isSubmenu) ::goBack else null,
             )
-            Rule()
+            if (!(currentView == NOW_PLAYING_VIEW && !isSubmenu)) Rule()
             }
             Box(modifier = Modifier.weight(1f)) {
                 HorizontalPager(
                     state = pagerState,
-                    contentPadding = PaddingValues(bottom = if (immersiveCoverFlow) 0.dp else 78.dp),
+                    contentPadding = PaddingValues(bottom = if (immersiveCoverFlow || nowPlayingExpanded) 0.dp else 78.dp),
                     userScrollEnabled = !isSubmenu,
                     modifier = Modifier.fillMaxSize(),
                 ) { page ->
@@ -191,37 +317,122 @@ internal fun RelayAppContent(
                         EmptyLibrary()
                     } else {
                         if (reviewTrack == null) {
-                            Column(modifier = Modifier.fillMaxSize()) {
-                                if (tracksNeedingMetadata.isNotEmpty()) {
-                                    MetadataBanner(onReview = {
-                                        navigateTo(destination.copy(view = 0, reviewTrack = tracksNeedingMetadata.first()))
-                                    })
-                                    Rule()
-                                }
-                                LibraryControls(
-                                    query = libraryQuery,
-                                    sort = librarySort,
-                                    resultCount = listedTracks.size,
-                                    onQueryChange = { libraryQuery = it },
-                                    onSortChange = { librarySort = it },
-                                )
-                                Rule()
-                                TrackList(
-                                    tracks = listedTracks,
+                            when {
+                                openAlbum != null -> AlbumDetail(
+                                    album = openAlbum,
                                     playbackState = state.playback,
                                     favoriteTrackKeys = state.favoriteTrackKeys,
                                     trackFlags = state.trackFlags,
-                                    onTrackSelected = actions.onTrackSelected,
+                                    playlists = state.playlists,
+                                    onPlayIndex = { index -> playTracks(openAlbum.tracks, index) },
                                     onFavoriteToggle = actions.onFavoriteToggle,
                                     onTrackFlagsChange = actions.onTrackFlagsChange,
-                                    onMetadataReview = { navigateTo(destination.copy(view = 0, reviewTrack = it)) },
-                                    playlists = state.playlists,
+                                    onMetadataReview = { navigateTo(destination.copy(view = LIBRARY_VIEW, reviewTrack = it)) },
                                     onAddToPlaylist = actions.onAddToPlaylist,
                                     onCreateAndAddToPlaylist = actions.onCreateAndAddToPlaylist,
                                     onPlayNext = actions.onPlayNext,
                                     onEnqueue = actions.onEnqueue,
-                                    modifier = Modifier.weight(1f),
                                 )
+                                openArtist != null -> ArtistDetail(
+                                    artist = openArtist,
+                                    playbackState = state.playback,
+                                    favoriteTrackKeys = state.favoriteTrackKeys,
+                                    trackFlags = state.trackFlags,
+                                    playlists = state.playlists,
+                                    onPlayIndex = { index -> playTracks(openArtist.tracks, index) },
+                                    onOpenAlbum = { album ->
+                                        navigateTo(destination.copy(view = LIBRARY_VIEW, artistKey = null, albumKey = album.key))
+                                    },
+                                    onFavoriteToggle = actions.onFavoriteToggle,
+                                    onTrackFlagsChange = actions.onTrackFlagsChange,
+                                    onMetadataReview = { navigateTo(destination.copy(view = LIBRARY_VIEW, reviewTrack = it)) },
+                                    onAddToPlaylist = actions.onAddToPlaylist,
+                                    onCreateAndAddToPlaylist = actions.onCreateAndAddToPlaylist,
+                                    onPlayNext = actions.onPlayNext,
+                                    onEnqueue = actions.onEnqueue,
+                                )
+                                else -> Column(modifier = Modifier.fillMaxSize()) {
+                                    if (tracksNeedingMetadata.isNotEmpty()) {
+                                        MetadataBanner(onReview = {
+                                            navigateTo(destination.copy(view = LIBRARY_VIEW, reviewTrack = tracksNeedingMetadata.first()))
+                                        })
+                                        Rule()
+                                    }
+                                    LibraryBrowseModes(
+                                        selected = libraryBrowse,
+                                        onSelect = { libraryBrowse = it },
+                                    )
+                                    Rule()
+                                    if (libraryBrowse == LibraryBrowseMode.ALBUMS) {
+                                        LibraryDensityPicker(
+                                            selected = libraryDensity,
+                                            onSelect = { libraryDensity = it },
+                                        )
+                                        Rule()
+                                    }
+                                    LibraryControls(
+                                        query = libraryQuery,
+                                        sort = librarySort,
+                                        resultCount = when (libraryBrowse) {
+                                            LibraryBrowseMode.TRACKS -> listedTracks.size
+                                            LibraryBrowseMode.ALBUMS -> listedAlbums.size
+                                            LibraryBrowseMode.ARTISTS -> listedArtists.size
+                                        },
+                                        onQueryChange = { libraryQuery = it },
+                                        onSortChange = { librarySort = it },
+                                        resultLabel = libraryBrowse.label,
+                                        showSort = libraryBrowse == LibraryBrowseMode.TRACKS,
+                                    )
+                                    Rule()
+                                    when (libraryBrowse) {
+                                        LibraryBrowseMode.TRACKS -> TrackList(
+                                            tracks = listedTracks,
+                                            playbackState = state.playback,
+                                            favoriteTrackKeys = state.favoriteTrackKeys,
+                                            trackFlags = state.trackFlags,
+                                            onTrackSelected = actions.onTrackSelected,
+                                            onFavoriteToggle = actions.onFavoriteToggle,
+                                            onTrackFlagsChange = actions.onTrackFlagsChange,
+                                            onMetadataReview = { navigateTo(destination.copy(view = LIBRARY_VIEW, reviewTrack = it)) },
+                                            playlists = state.playlists,
+                                            onAddToPlaylist = actions.onAddToPlaylist,
+                                            onCreateAndAddToPlaylist = actions.onCreateAndAddToPlaylist,
+                                            onPlayNext = actions.onPlayNext,
+                                            onEnqueue = actions.onEnqueue,
+                                            modifier = Modifier.weight(1f),
+                                        )
+                                        LibraryBrowseMode.ALBUMS -> AlbumBrowser(
+                                            albums = listedAlbums,
+                                            emptyMessage = if (libraryQuery.isBlank()) {
+                                                "No albums found."
+                                            } else {
+                                                "No albums match this search."
+                                            },
+                                            onOpen = { album ->
+                                                navigateTo(destination.copy(view = LIBRARY_VIEW, albumKey = album.key, artistKey = null))
+                                            },
+                                            density = libraryDensity,
+                                            currentAlbumKey = playingAlbumKey,
+                                            modifier = Modifier.weight(1f),
+                                        )
+                                        LibraryBrowseMode.ARTISTS -> ArtistSections(
+                                            artists = listedArtists,
+                                            currentTrackKey = state.playback.currentTrack?.let(::trackKey),
+                                            onOpenArtist = { artist ->
+                                                navigateTo(destination.copy(view = LIBRARY_VIEW, artistKey = artist.key, albumKey = null))
+                                            },
+                                            onPlayTrack = { artist, index -> playTracks(artist.tracks, index) },
+                                            modifier = Modifier.weight(1f),
+                                        )
+                                    }
+                                    if (libraryQuery.isBlank() && recentTracks.isNotEmpty()) {
+                                        RecentlyPlayedStrip(
+                                            tracks = recentTracks,
+                                            currentTrackKey = state.playback.currentTrack?.let(::trackKey),
+                                            onPlay = { index -> playTracks(recentTracks, index) },
+                                        )
+                                    }
+                                }
                             }
                         } else {
                             MetadataReview(
@@ -281,7 +492,7 @@ internal fun RelayAppContent(
                             onClear = actions.onClearQueue,
                         )
                     } else {
-                        Spacer(Modifier.fillMaxSize())
+                        renderPlayer(PlayerLayout.EXPANDED, Modifier.fillMaxSize())
                     }
                     PLAYLISTS_VIEW -> {
                         if (openPlaylist == null) {
@@ -467,58 +678,45 @@ internal fun RelayAppContent(
                     )
                 }
                 }
-                if (!immersiveCoverFlow) PlayerSurface(
-                    layout = if (currentView == NOW_PLAYING_VIEW && !queueOpen && !landscape) PlayerLayout.EXPANDED else PlayerLayout.COMPACT,
-                    playbackState = state.playback,
-                    onPlayPause = actions.onPlayPause,
-                    onPrevious = actions.onPrevious,
-                    onNext = actions.onNext,
-                    onSeekTo = actions.onSeekTo,
-                    lyricsText = state.lyricsText.takeIf { state.playback.currentTrack?.let(::trackKey) == state.lyricsTrackKey },
-                    lyricsMessage = state.lyricsMessage,
-                    onLoadLyrics = actions.onLoadLyrics,
-                    onSaveLyrics = actions.onSaveLyrics,
-                    onFetchLyrics = actions.onFetchLyrics,
-                    onViewSwipe = { delta -> navigateTo(destination.forView((currentView + delta + PAGE_TITLES.size) % PAGE_TITLES.size)) },
-                    shuffleProfileName = state.settings.activeShuffleProfile().name,
-                    onShuffleEnabledChange = actions.onShuffleEnabledChange,
-                    onRepeatModeChange = actions.onRepeatModeChange,
-                    onReshuffle = actions.onShuffleQueue,
-                    onOpenShuffleSettings = {
-                        navigateTo(destination.copy(view = SETTINGS_VIEW, settingsSubmenu = SettingsSubmenu.PLAYBACK))
-                    },
-                    onOpenQueue = { navigateTo(destination.copy(view = NOW_PLAYING_VIEW, queueOpen = true)) },
-                    lyricsOpen = lyricsOpen,
-                    onToggleLyrics = {
-                        // Keep lyric actions visible after opening the overlay.
-                        if (lyricsOpen) {
-                            goBack()
-                        } else {
-                            navigateTo(destination.copy(view = NOW_PLAYING_VIEW, lyricsOpen = true, playerOptionsOpen = true))
-                        }
-                    },
-                    optionsOpen = playerOptionsOpen,
-                    onToggleOptions = {
-                        if (playerOptionsOpen) {
-                            goBack()
-                        } else {
-                            navigateTo(destination.copy(view = NOW_PLAYING_VIEW, playerOptionsOpen = true))
-                        }
-                    },
-                    sleepTimer = state.sleepTimer,
-                    onSelectSleepTimer = actions.onSelectSleepTimer,
-                    onImportLyricsFile = actions.onImportLyricsFile,
-                    onExportLyricsFile = actions.onExportLyricsFile,
-                    onOpenNowPlaying = { navigateTo(destination.forView(NOW_PLAYING_VIEW)) },
-                    modifier = Modifier.align(Alignment.BottomCenter).fillMaxWidth(),
-                )
+                if (!immersiveCoverFlow && !nowPlayingExpanded) {
+                    renderPlayer(
+                        PlayerLayout.COMPACT,
+                        Modifier.align(Alignment.BottomCenter).fillMaxWidth(),
+                    )
+                }
             }
+        }
+        AnimatedVisibility(
+            visible = sectionMenuOpen,
+            enter = slideInVertically(initialOffsetY = { -it / 3 }) + fadeIn(),
+            exit = slideOutVertically(targetOffsetY = { -it / 3 }) + fadeOut(),
+        ) {
+            MetroSectionMenu(
+                sections = METRO_SECTIONS,
+                currentIndex = currentView,
+                artworkUri = state.playback.currentTrack?.artworkUri,
+                signature = state.localProfile?.displayName.orEmpty(),
+                onSelect = { index ->
+                    sectionMenuOpen = false
+                    navigateTo(destination.forView(index))
+                },
+                onClose = { sectionMenuOpen = false },
+            )
         }
         }
     }
 }
 
 private val PAGE_TITLES = listOf("LIBRARY", "NOW PLAYING", "PLAYLISTS", "INSIGHTS", "EXTENSIONS", "SETTINGS")
+
+internal val METRO_SECTIONS = listOf(
+    MetroSection("Library", "albums · artists · songs", RelayIcons.Library),
+    MetroSection("Now playing", "what's on", RelayIcons.Play),
+    MetroSection("Playlists", "your lists", RelayIcons.Queue),
+    MetroSection("Insights", "listening", RelayIcons.Insights),
+    MetroSection("Extensions", "sources", RelayIcons.Extension),
+    MetroSection("Settings", "relay", RelayIcons.Settings),
+)
 internal const val LIBRARY_VIEW = 0
 internal const val NOW_PLAYING_VIEW = 1
 internal const val PLAYLISTS_VIEW = 2
@@ -534,6 +732,8 @@ internal data class RelayDestination(
     val view: Int,
     val reviewTrack: Track? = null,
     val selectedPlaylistId: Long? = null,
+    val albumKey: String? = null,
+    val artistKey: String? = null,
     val settingsSubmenu: SettingsSubmenu? = null,
     val extensionsSubmenu: ExtensionsSubmenu? = null,
     val extensionsTab: ExtensionsTab = ExtensionsTab.SOURCES,
@@ -546,13 +746,18 @@ internal data class RelayDestination(
 ) {
     /** True when this destination is a sub-screen rather than a plain top-level page. */
     val hasSubState: Boolean
-        get() = reviewTrack != null || settingsSubmenu != null || extensionsSubmenu != null || queueOpen || lyricsOpen || playerOptionsOpen ||
-            wallpaperEditorOpen || (view == PLAYLISTS_VIEW && selectedPlaylistId != null)
+        get() = reviewTrack != null ||
+            (view == LIBRARY_VIEW && (albumKey != null || artistKey != null)) ||
+            settingsSubmenu != null || extensionsSubmenu != null || queueOpen || lyricsOpen ||
+            playerOptionsOpen || wallpaperEditorOpen ||
+            (view == PLAYLISTS_VIEW && selectedPlaylistId != null)
 
     fun forView(view: Int) = copy(
         view = view,
         reviewTrack = null,
         selectedPlaylistId = null,
+        albumKey = null,
+        artistKey = null,
         settingsSubmenu = null,
         extensionsSubmenu = null,
         extensionsTab = ExtensionsTab.SOURCES,
@@ -590,38 +795,4 @@ internal data class RelayNavigationState(
 internal fun pagerPageDelta(current: Int, target: Int): Int {
     val forward = (target - current + PAGE_TITLES.size) % PAGE_TITLES.size
     return if (forward > PAGE_TITLES.size / 2) forward - PAGE_TITLES.size else forward
-}
-
-@Composable
-private fun PageHeading(
-    previousTitle: String,
-    title: String,
-    nextTitle: String,
-    onBack: (() -> Unit)?,
-    onPrevious: () -> Unit,
-    onNext: () -> Unit,
-) {
-    Box(modifier = Modifier.fillMaxWidth().clipToBounds().padding(vertical = 16.dp)) {
-        BasicText(
-            text = if (onBack == null) previousTitle else "<- BACK",
-            style = RelayType.Track.copy(color = if (onBack == null) RelayColors.Muted else RelayColors.Paper),
-            modifier = Modifier
-                .align(Alignment.CenterStart)
-                .heightIn(min = 48.dp)
-                .then(if (onBack == null) Modifier.clickable(role = Role.Button, onClick = onPrevious) else Modifier.clickable(role = Role.Button, onClick = onBack))
-                .padding(start = 16.dp, top = 15.dp),
-        )
-        BasicText(title, style = RelayType.Title, modifier = Modifier.align(Alignment.Center))
-        if (onBack == null) {
-            BasicText(
-                nextTitle,
-                style = RelayType.Track.copy(color = RelayColors.Muted),
-                modifier = Modifier
-                    .align(Alignment.CenterEnd)
-                    .heightIn(min = 48.dp)
-                    .clickable(role = Role.Button, onClick = onNext)
-                    .padding(end = 16.dp, top = 15.dp),
-            )
-        }
-    }
 }

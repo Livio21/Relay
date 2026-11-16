@@ -33,6 +33,7 @@ import dev.relay.music.model.Track
 import dev.relay.music.model.Playlist
 import dev.relay.music.ui.RelayColors
 import dev.relay.music.ui.RelayType
+import dev.relay.music.ui.RelayMarqueeText
 
 @Composable
 internal fun PlaylistDetailScreen(
@@ -50,28 +51,25 @@ internal fun PlaylistDetailScreen(
     var renaming by remember { mutableStateOf(false) }
     var renameValue by remember { mutableStateOf(playlist.name) }
     var confirmDelete by remember { mutableStateOf(false) }
-    Column(modifier = Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(16.dp)) {
-        BasicText(playlist.name.uppercase(), style = RelayType.Title)
-        BasicText(
-            when {
+    val loadedTracks = tracks.orEmpty()
+    Column(modifier = Modifier.fillMaxSize().verticalScroll(rememberScrollState())) {
+        CollectionHeader(
+            artworkUri = loadedTracks.firstOrNull()?.artworkUri,
+            title = playlist.name,
+            subtitle = "PLAYLIST",
+            meta = when {
                 tracks == null -> "LOADING…"
-                tracks.isEmpty() -> "EMPTY PLAYLIST"
-                else -> "${tracks.size} TRACKS"
+                loadedTracks.isEmpty() -> "EMPTY PLAYLIST"
+                else -> "${loadedTracks.size} TRACKS"
             },
-            style = RelayType.Utility.copy(color = RelayColors.Muted),
-            modifier = Modifier.padding(top = 4.dp),
+            playDescription = "Play playlist ${playlist.name}",
+            onPlay = { onPlayTrack(0) },
         )
+        Rule()
         Row(
-            modifier = Modifier.fillMaxWidth().padding(top = 12.dp),
+            modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp),
             horizontalArrangement = Arrangement.spacedBy(8.dp),
         ) {
-            TransportAction(
-                label = "PLAY",
-                description = "Play playlist ${playlist.name}",
-                enabled = !tracks.isNullOrEmpty(),
-                onClick = { onPlayTrack(0) },
-                modifier = Modifier.weight(1f),
-            )
             TransportAction(
                 label = "ADD TRACKS",
                 description = "Add library tracks to ${playlist.name}",
@@ -89,7 +87,7 @@ internal fun PlaylistDetailScreen(
         }
         if (editing) {
             Row(
-                modifier = Modifier.fillMaxWidth().padding(top = 8.dp),
+                modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp),
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
             ) {
                 TransportAction(
@@ -118,7 +116,7 @@ internal fun PlaylistDetailScreen(
                 singleLine = true,
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(top = 8.dp)
+                    .padding(horizontal = 16.dp, vertical = 8.dp)
                     .border(width = 1.dp, color = RelayColors.Line)
                     .padding(horizontal = 12.dp, vertical = 12.dp)
                     .semantics { contentDescription = "Playlist name" },
@@ -128,7 +126,7 @@ internal fun PlaylistDetailScreen(
                 description = "Save playlist name",
                 enabled = renameValue.isNotBlank(),
                 onClick = { onRename(renameValue); renaming = false },
-                modifier = Modifier.fillMaxWidth().padding(top = 8.dp),
+                modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp),
             )
         }
         tracks?.forEachIndexed { index, track ->
@@ -177,10 +175,10 @@ internal fun PlaylistScreen(
                 description = "Create playlist",
                 enabled = name.isNotBlank(),
                 onClick = { onCreatePlaylist(name); name = "" },
-                modifier = Modifier.fillMaxWidth().padding(top = 8.dp),
+                modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp),
             )
             playlists.forEach { playlist ->
-                BasicText(
+                RelayMarqueeText(
                     text = playlist.name,
                     style = RelayType.Track,
                     modifier = Modifier
@@ -226,7 +224,7 @@ private fun BoxScope.PlaylistOptionsMenu(
             .border(1.dp, RelayColors.Line)
             .padding(12.dp),
     ) {
-        BasicText(playlist.name, style = RelayType.Track)
+        RelayMarqueeText(playlist.name, style = RelayType.Track)
         Row(modifier = Modifier.fillMaxWidth().padding(top = 8.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             TransportAction("PLAY", "Play playlist ${playlist.name}", true, onPlay, Modifier.weight(1f))
             TransportAction("OPEN", "Open playlist ${playlist.name}", true, onOpen, Modifier.weight(1f))

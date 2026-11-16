@@ -1,6 +1,13 @@
 package dev.relay.music
 
 import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.animateContentSize
+import androidx.compose.animation.core.animateDpAsState
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.expandVertically
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.shrinkVertically
 import androidx.compose.animation.EnterTransition
 import androidx.compose.animation.ExitTransition
 import androidx.compose.animation.SizeTransform
@@ -18,11 +25,15 @@ import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxScope
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -42,9 +53,12 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.blur
 import androidx.compose.ui.draw.clipToBounds
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.layout.boundsInParent
+import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.semantics.ProgressBarRangeInfo
@@ -62,6 +76,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.Dp
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
 import dev.relay.music.model.SleepTimer
 import dev.relay.music.model.TimedLyrics
@@ -78,6 +93,10 @@ import dev.relay.music.model.stampLrcLine
 import dev.relay.music.playback.PlaybackState
 import dev.relay.music.playback.RepeatMode
 import dev.relay.music.ui.RelayColors
+import dev.relay.music.ui.RelayIcon
+import dev.relay.music.ui.RelayIconButton
+import dev.relay.music.ui.RelayIcons
+import dev.relay.music.ui.RelayMarqueeText
 import dev.relay.music.ui.RelayPresentation
 import dev.relay.music.ui.RelayType
 import dev.relay.music.ui.asThemedTitle
@@ -94,6 +113,8 @@ import kotlin.time.Duration.Companion.milliseconds
 
 internal enum class PlayerLayout { EXPANDED, COMPACT }
 
+private enum class PlayerDrawer { NONE, QUEUE, LYRICS, OPTIONS }
+
 @Composable
 internal fun PlayerSurface(
     layout: PlayerLayout,
@@ -107,7 +128,6 @@ internal fun PlayerSurface(
     onLoadLyrics: ((Track) -> Unit)? = null,
     onSaveLyrics: ((Track, String) -> Unit)? = null,
     onFetchLyrics: ((Track) -> Unit)? = null,
-    onViewSwipe: (Int) -> Unit = {},
     onOpenNowPlaying: () -> Unit = {},
     shuffleProfileName: String = "DEFAULT",
     onShuffleEnabledChange: ((Boolean) -> Unit)? = null,
@@ -125,28 +145,10 @@ internal fun PlayerSurface(
     onExportLyricsFile: (() -> Unit)? = null,
     modifier: Modifier = Modifier,
 ) {
-    var horizontalDrag by remember { mutableFloatStateOf(0f) }
-    val swipeThresholdPx = with(LocalDensity.current) { 48.dp.toPx() }
     AnimatedContent(
         targetState = layout,
         transitionSpec = { (EnterTransition.None togetherWith ExitTransition.None).using(SizeTransform(clip = false)) },
-        modifier = modifier.pointerInput(layout, swipeThresholdPx) {
-            if (layout == PlayerLayout.EXPANDED) {
-                detectHorizontalDragGestures(
-                    onDragStart = { horizontalDrag = 0f },
-                    onHorizontalDrag = { change, amount ->
-                        horizontalDrag += amount
-                        change.consume()
-                    },
-                    onDragEnd = {
-                        when {
-                            horizontalDrag >= swipeThresholdPx -> onViewSwipe(-1)
-                            horizontalDrag <= -swipeThresholdPx -> onViewSwipe(1)
-                        }
-                    },
-                )
-            }
-        },
+        modifier = modifier,
         label = "player surface",
     ) { targetLayout ->
         when (targetLayout) {
@@ -201,19 +203,28 @@ internal fun CompactPlayerSurface(
     onOpenNowPlaying: () -> Unit = {},
 ) {
     val track = playbackState.currentTrack
-    Column(
+    Box(
         modifier = modifier
             .border(1.dp, RelayColors.Line)
-            .fillMaxWidth()
-            .background(RelayColors.Panel)
+            .fillMaxWidth(),
     ) {
-        PlayerProgress(
+        track?.artworkUri?.let { artworkUri ->
+            AsyncImage(
+                model = artworkUri,
+                contentDescription = null,
+                contentScale = ContentScale.Crop,
+                modifier = Modifier.matchParentSize().blur(24.dp).alpha(0.30f),
+            )
+        }
+        Box(Modifier.matchParentSize().background(RelayColors.Panel.copy(alpha = 0.82f)))
+        Column(modifier = Modifier.fillMaxWidth()) {
+            PlayerProgress(
             progressText = false,
             playbackState = playbackState,
             onSeekTo = onSeekTo,
             modifier = Modifier.fillMaxWidth(),
-            barHeight = 6.dp,
-            thumbSize = 14.dp,
+            barHeight = 3.dp,
+            thumbSize = 0.dp,
         )
         Row(
             modifier = Modifier.fillMaxWidth().height(64.dp),
@@ -230,28 +241,23 @@ internal fun CompactPlayerSurface(
                 expanded = false,
                 modifier = Modifier.weight(1f).padding(horizontal = 12.dp),
             )
-            BasicText(
-                "PREV",
-                style = RelayType.Utility,
-                modifier = Modifier.heightIn(min = 48.dp).clickable(role = Role.Button, onClick = onPrevious).padding(horizontal = 10.dp, vertical = 16.dp),
+            RelayIconButton(RelayIcons.Previous, "Previous track", onPrevious)
+            RelayIconButton(
+                icon = if (playbackState.isPlaying) RelayIcons.Pause else RelayIcons.Play,
+                description = if (playbackState.isPlaying) "Pause" else "Play",
+                onClick = onPlayPause,
+                tint = RelayColors.Signal,
+                size = 28.dp,
             )
-            BasicText(
-                if (playbackState.isPlaying) "PAUSE" else "PLAY",
-                style = RelayType.Utility.copy(color = RelayColors.Danger),
-                modifier = Modifier.heightIn(min = 48.dp).clickable(role = Role.Button, onClick = onPlayPause).padding(horizontal = 10.dp, vertical = 16.dp),
-            )
-            BasicText(
-                "NEXT",
-                style = RelayType.Utility,
-                modifier = Modifier.heightIn(min = 48.dp).clickable(role = Role.Button, onClick = onNext).padding(horizontal = 10.dp, vertical = 16.dp),
-            )
+            RelayIconButton(RelayIcons.Next, "Next track", onNext)
         }
-        playbackState.error?.let { message ->
-            BasicText(
-                message,
-                style = RelayType.Metadata.copy(color = RelayColors.Danger),
-                modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 8.dp),
-            )
+            playbackState.error?.let { message ->
+                BasicText(
+                    message,
+                    style = RelayType.Metadata.copy(color = RelayColors.Danger),
+                    modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 8.dp),
+                )
+            }
         }
     }
 }
@@ -307,25 +313,38 @@ internal fun ExpandedPlayerSurface(
         )
         return
     }
+    var drawer by remember(trackKey(track)) { mutableStateOf(PlayerDrawer.NONE) }
+    var drawerHeightPx by remember { mutableIntStateOf(0) }
+    val density = LocalDensity.current
+    val baseDrawerHeight = 44.dp
+    val baseDrawerPx = with(density) { baseDrawerHeight.toPx() }.toInt()
+    val targetOffsetPx = if (drawer == PlayerDrawer.NONE) 0 else (drawerHeightPx - baseDrawerPx).coerceAtLeast(0)
+    val contentOffset by animateDpAsState(
+        targetValue = with(density) { targetOffsetPx.toDp() },
+        label = "playerDrawerOffset",
+    )
     Box(modifier = modifier.fillMaxSize()) {
-        Column(
-            modifier = Modifier.fillMaxSize().verticalScroll(rememberScrollState()),
-            horizontalAlignment = Alignment.CenterHorizontally,
-        ) {
+        Column(modifier = Modifier.fillMaxSize()) {
+            Box(modifier = Modifier.weight(1f)) {
+            Column(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .graphicsLayer { translationY = -contentOffset.toPx() },
+                horizontalAlignment = Alignment.CenterHorizontally,
+            ) {
             val compactPresentation = RelayPresentation.playerLayout == ThemePlayerLayout.COMPACT
-            PlayerAmbientStrip(track.artworkUri, 32.dp)
+            Spacer(Modifier.height(16.dp))
             Box(
                 modifier = Modifier
                     .fillMaxWidth(if (compactPresentation) 0.62f else 1f)
-                    .aspectRatio(1f),
+                    .aspectRatio(1f)
             ) {
-                PlayerArtwork(track, "NO ARTWORK", Modifier.fillMaxSize())
+                PlayerArtwork(track, "NO ARTWORK", Modifier.fillMaxSize(), contentScale = ContentScale.Fit)
                 if (lyricsOpen) LyricsOverlay(lyricsText, lyricsMessage, playbackState.positionMs)
             }
-            PlayerAmbientStrip(track.artworkUri, 48.dp)
             Column(modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp)) {
-                PlayerIdentity(track, expanded = true, modifier = Modifier.fillMaxWidth().padding(top = 20.dp))
-                PlayerProgress(progressText = true ,playbackState, onSeekTo, Modifier.padding(top = 20.dp))
+                MetroPlayerIdentity(track)
+                PlayerProgress(progressText = true, playbackState, onSeekTo, Modifier.padding(top = 8.dp))
                 playbackState.error?.let { message ->
                     BasicText(
                         message,
@@ -343,89 +362,368 @@ internal fun ExpandedPlayerSurface(
                         TransportAction(if (playbackState.isPlaying) "PAUSE" else "PLAY", "Play or pause", true, onPlayPause, Modifier.weight(1f))
                         TransportAction("NEXT", "Next track", true, onNext, Modifier.weight(1f))
                     }
-                    ThemeTransportLayout.CENTERED_ICONS -> CenteredIconTransport(playbackState.isPlaying, onPrevious, onPlayPause, onNext)
+                    ThemeTransportLayout.CENTERED_ICONS -> CenteredIconTransport(
+                        isPlaying = playbackState.isPlaying,
+                        shuffleEnabled = playbackState.shuffleEnabled,
+                        repeatMode = playbackState.repeatMode,
+                        onPrevious = onPrevious,
+                        onPlayPause = onPlayPause,
+                        onNext = onNext,
+                        onShuffle = onShuffleEnabledChange,
+                        onRepeat = onRepeatModeChange,
+                    )
                     ThemeTransportLayout.SPACED_BAR -> SpacedBarTransport(playbackState.isPlaying, onPrevious, onPlayPause, onNext)
                 }
-                onToggleOptions?.let {
-                    TransportAction(
-                        label = if (optionsOpen) "CLOSE" else "MORE",
-                        description = if (optionsOpen) "Hide player options" else "Show player options",
-                        enabled = true,
-                        onClick = it,
-                        modifier = Modifier.fillMaxWidth().padding(top = 8.dp),
+                MetroSecondaryActions(
+                    drawer = drawer,
+                    onQueue = { drawer = if (drawer == PlayerDrawer.QUEUE) PlayerDrawer.NONE else PlayerDrawer.QUEUE },
+                    onLyrics = { drawer = if (drawer == PlayerDrawer.LYRICS) PlayerDrawer.NONE else PlayerDrawer.LYRICS },
+                    onOptions = { drawer = if (drawer == PlayerDrawer.OPTIONS) PlayerDrawer.NONE else PlayerDrawer.OPTIONS },
+                )
+            }
+            }
+            }
+            Spacer(Modifier.fillMaxWidth().height(baseDrawerHeight))
+        }
+        AnimatedVisibility(
+            visible = drawer != PlayerDrawer.NONE,
+            modifier = Modifier
+                .align(Alignment.BottomCenter)
+                .fillMaxWidth()
+                .onSizeChanged { drawerHeightPx = it.height },
+            enter = expandVertically(expandFrom = Alignment.Bottom) + fadeIn(),
+            exit = shrinkVertically(shrinkTowards = Alignment.Bottom) + fadeOut(),
+        ) {
+            MetroPlayerDrawer(
+                drawer = drawer,
+                onClose = { drawer = PlayerDrawer.NONE },
+                playbackState = playbackState,
+                lyricsText = lyricsText,
+                lyricsMessage = lyricsMessage,
+                canEditLyrics = onSaveLyrics != null,
+                canFetchLyrics = onFetchLyrics != null && track.title.isNotBlank() && track.artist.isNotBlank(),
+                shuffleProfileName = shuffleProfileName,
+                sleepTimer = sleepTimer,
+                onShuffleEnabledChange = onShuffleEnabledChange,
+                onRepeatModeChange = onRepeatModeChange,
+                onReshuffle = onReshuffle,
+                onOpenShuffleSettings = onOpenShuffleSettings,
+                onOpenLyricsEditor = { editingLyrics = true },
+                onFetchLyrics = { onFetchLyrics?.invoke(track) },
+                onSelectSleepTimer = onSelectSleepTimer,
+                onImportLyricsFile = onImportLyricsFile,
+                onExportLyricsFile = onExportLyricsFile,
+            )
+        }
+    }
+}
+
+@Composable
+private fun MetroPlayerDrawer(
+    drawer: PlayerDrawer,
+    onClose: () -> Unit,
+    playbackState: PlaybackState,
+    lyricsText: String?,
+    lyricsMessage: String?,
+    canEditLyrics: Boolean,
+    canFetchLyrics: Boolean,
+    shuffleProfileName: String,
+    sleepTimer: SleepTimer,
+    onShuffleEnabledChange: ((Boolean) -> Unit)?,
+    onRepeatModeChange: ((RepeatMode) -> Unit)?,
+    onReshuffle: (() -> Unit)?,
+    onOpenShuffleSettings: (() -> Unit)?,
+    onOpenLyricsEditor: () -> Unit,
+    onFetchLyrics: () -> Unit,
+    onSelectSleepTimer: ((SleepTimer) -> Unit)?,
+    onImportLyricsFile: (() -> Unit)?,
+    onExportLyricsFile: (() -> Unit)?,
+) {
+    val label = when (drawer) {
+        PlayerDrawer.QUEUE -> "QUEUE"
+        PlayerDrawer.LYRICS -> "LYRICS"
+        PlayerDrawer.OPTIONS -> "PLAYER OPTIONS"
+        PlayerDrawer.NONE -> ""
+    }
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .animateContentSize()
+            .background(RelayColors.Panel)
+            .navigationBarsPadding(),
+    ) {
+        Row(
+                    modifier = Modifier.fillMaxWidth().heightIn(min = 40.dp).padding(start = 16.dp, end = 4.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    BasicText(label, style = RelayType.Kicker.copy(color = RelayColors.Signal))
+                    if (drawer == PlayerDrawer.QUEUE) {
+                        BasicText(
+                            "  ${playbackState.queue.size} TRACKS",
+                            style = RelayType.Kicker,
+                        )
+                    }
+                    Spacer(Modifier.weight(1f))
+                    RelayIconButton(
+                        icon = RelayIcons.Close,
+                        description = "Close $label drawer",
+                        onClick = onClose,
+                        tint = RelayColors.Paper,
+                        hapticAction = HapticAction.TAB_CHANGE,
+                        modifier = Modifier.background(RelayColors.Line.copy(alpha = 0.55f), CircleShape),
                     )
                 }
-                if (optionsOpen && onToggleOptions != null) {
+                AnimatedContent(
+            targetState = drawer,
+            transitionSpec = { fadeIn() togetherWith fadeOut() },
+            label = "player drawer content",
+        ) { targetDrawer ->
+        when (targetDrawer) {
+            PlayerDrawer.QUEUE -> {
+                if (playbackState.queue.isEmpty()) {
+                    BasicText(
+                        "The queue is empty.",
+                        style = RelayType.Metadata,
+                        modifier = Modifier.padding(16.dp),
+                    )
+                } else {
+                    LazyColumn(
+                        modifier = Modifier.fillMaxWidth().heightIn(max = 260.dp),
+                        contentPadding = PaddingValues(bottom = 16.dp),
+                    ) {
+                        itemsIndexed(
+                            playbackState.queue,
+                            key = { index, track -> "$index-${track.sourceId}-${track.id}" },
+                        ) { index, track ->
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .heightIn(min = 48.dp)
+                                    .background(if (index == playbackState.currentIndex) RelayColors.Panel else RelayColors.Ink)
+                                    .padding(horizontal = 16.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                                horizontalArrangement = Arrangement.spacedBy(10.dp),
+                            ) {
+                                PlayerArtwork(track, "NO ART", Modifier.size(32.dp))
+                                Column(modifier = Modifier.weight(1f)) {
+                                    RelayMarqueeText(
+                                        text = track.title,
+                                        style = RelayType.Track.copy(
+                                            color = if (index == playbackState.currentIndex) RelayColors.Signal else RelayColors.Paper,
+                                        ),
+                                    )
+                                    RelayMarqueeText(text = track.artist, style = RelayType.Metadata)
+                                }
+                                BasicText(
+                                    track.durationMs?.let(::formatDuration) ?: "--:--",
+                                    style = RelayType.Utility,
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+            PlayerDrawer.LYRICS -> {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .heightIn(max = 300.dp)
+                        .verticalScroll(rememberScrollState())
+                        .padding(16.dp),
+                ) {
+                    BasicText(
+                        text = lyricsText?.takeIf { it.isNotBlank() } ?: lyricsMessage ?: "No lyrics yet.",
+                        style = RelayType.Metadata.copy(color = RelayColors.Paper),
+                    )
+                }
+            }
+            PlayerDrawer.OPTIONS -> {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .heightIn(max = 360.dp)
+                        .verticalScroll(rememberScrollState()),
+                ) {
                     PlayerOptionsMenu(
                         playbackState = playbackState,
-                        lyricsOpen = lyricsOpen,
-                        canEditLyrics = onSaveLyrics != null,
-                        canFetchLyrics = onFetchLyrics != null && track.title.isNotBlank() && track.artist.isNotBlank(),
+                        lyricsOpen = lyricsText != null,
+                        canEditLyrics = canEditLyrics,
+                        canFetchLyrics = canFetchLyrics,
                         shuffleProfileName = shuffleProfileName,
                         sleepTimer = sleepTimer,
                         onShuffleEnabledChange = onShuffleEnabledChange,
                         onRepeatModeChange = onRepeatModeChange,
                         onReshuffle = onReshuffle,
                         onOpenShuffleSettings = onOpenShuffleSettings,
-                        onOpenQueue = onOpenQueue,
-                        onToggleLyrics = onToggleLyrics,
-                        onEditLyrics = { editingLyrics = true },
-                        onFetchLyrics = { onFetchLyrics?.invoke(track) },
+                        onOpenQueue = null,
+                        onToggleLyrics = null,
+                        onEditLyrics = onOpenLyricsEditor,
+                        onFetchLyrics = onFetchLyrics,
                         onSelectSleepTimer = onSelectSleepTimer,
                         onImportLyricsFile = onImportLyricsFile,
                         onExportLyricsFile = onExportLyricsFile,
                     )
                 }
             }
-        }
+                    PlayerDrawer.NONE -> Unit
+                }
+                }
+                Spacer(Modifier.height(16.dp))
     }
 }
 
-/** iPod-style cluster: flanking glyph buttons around a large bordered play control. */
+/** One primary media row: shuffle, previous, play, next, repeat. */
 @Composable
 private fun CenteredIconTransport(
     isPlaying: Boolean,
+    shuffleEnabled: Boolean,
+    repeatMode: RepeatMode,
     onPrevious: () -> Unit,
     onPlayPause: () -> Unit,
     onNext: () -> Unit,
+    onShuffle: ((Boolean) -> Unit)?,
+    onRepeat: ((RepeatMode) -> Unit)?,
 ) {
+    val haptics = LocalRelayHaptics.current
     Row(
-        modifier = Modifier.fillMaxWidth().padding(top = 16.dp),
+        modifier = Modifier.fillMaxWidth().padding(top = 8.dp, start = 8.dp, end = 8.dp),
         verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.SpaceBetween,
     ) {
-        CenteredGlyphButton("◀◀", "Previous track", emphasized = false, onClick = onPrevious)
-        Box(modifier = Modifier.weight(1.3f), contentAlignment = Alignment.Center) {
-            CenteredGlyphButton(
-                label = if (isPlaying) "Ⅱ" else "▶",
-                description = "Play or pause",
-                emphasized = true,
-                onClick = onPlayPause,
-            )
-        }
-        CenteredGlyphButton("▶▶", "Next track", emphasized = false, onClick = onNext)
+        MetroCircleControl(
+            icon = RelayIcons.Shuffle,
+            description = "Toggle shuffle",
+            onClick = { onShuffle?.invoke(!shuffleEnabled) },
+            size = 48.dp,
+            iconSize = 20.dp,
+            tint = if (shuffleEnabled) RelayColors.Signal else RelayColors.Muted,
+            haptics = haptics,
+        )
+        MetroCircleControl(
+            icon = RelayIcons.Previous,
+            description = "Previous track",
+            onClick = onPrevious,
+            size = 48.dp,
+            iconSize = 24.dp,
+            haptics = haptics,
+        )
+        MetroCircleControl(
+            icon = if (isPlaying) RelayIcons.Pause else RelayIcons.Play,
+            description = if (isPlaying) "Pause" else "Play",
+            onClick = onPlayPause,
+            size = 56.dp,
+            iconSize = 32.dp,
+            emphasized = true,
+            haptics = haptics,
+        )
+        MetroCircleControl(
+            icon = RelayIcons.Next,
+            description = "Next track",
+            onClick = onNext,
+            size = 48.dp,
+            iconSize = 24.dp,
+            haptics = haptics,
+        )
+        MetroCircleControl(
+            icon = RelayIcons.Repeat,
+            description = "Change repeat mode",
+            onClick = { onRepeat?.invoke(repeatMode.next()) },
+            size = 48.dp,
+            iconSize = 20.dp,
+            tint = if (repeatMode == RepeatMode.OFF) RelayColors.Muted else RelayColors.Signal,
+            haptics = haptics,
+        )
     }
 }
 
 @Composable
-private fun CenteredGlyphButton(label: String, description: String, emphasized: Boolean, onClick: () -> Unit) {
-    val haptics = LocalRelayHaptics.current
-    var buttonModifier = Modifier
-        .heightIn(min = if (emphasized) 64.dp else 48.dp)
-        .clickable(role = Role.Button) {
-            haptics.perform(HapticAction.TRANSPORT_PRESS)
-            onClick()
-        }
-        .padding(horizontal = 12.dp)
-    if (emphasized) {
-        buttonModifier = buttonModifier
-            .relayButtonBorder(color = RelayColors.Paper)
-            .padding(horizontal = 20.dp, vertical = 8.dp)
+private fun MetroCircleControl(
+    icon: androidx.compose.ui.graphics.vector.ImageVector,
+    description: String,
+    onClick: () -> Unit,
+    size: Dp,
+    iconSize: Dp,
+    emphasized: Boolean = false,
+    tint: Color = RelayColors.Paper,
+    haptics: dev.relay.music.haptics.Haptics,
+) {
+    Box(
+        modifier = Modifier
+            .size(size)
+            .then(if (emphasized) Modifier.background(RelayColors.Signal, CircleShape) else Modifier.border(1.dp, RelayColors.Line, CircleShape))
+            .semantics { contentDescription = description }
+            .clickable(role = Role.Button) {
+                haptics.perform(HapticAction.TRANSPORT_PRESS)
+                onClick()
+            },
+        contentAlignment = Alignment.Center,
+    ) {
+        RelayIcon(
+            icon = icon,
+            description = null,
+            tint = if (emphasized) RelayColors.Ink else tint,
+            size = iconSize,
+        )
     }
-    BasicText(
-        label,
-        style = (if (emphasized) RelayType.Title else RelayType.Track).copy(color = RelayColors.Paper),
-        modifier = Modifier.semantics { contentDescription = description }.then(buttonModifier),
-    )
+}
+
+@Composable
+private fun MetroPlayerIdentity(track: Track?) {
+    val effective = track?.resolveEffectiveMetadata()
+    Column(modifier = Modifier.fillMaxWidth().padding(top = 4.dp)) {
+        RelayMarqueeText(
+            text = (effective?.display?.title ?: "NO TRACK SELECTED").asThemedTitle(),
+            style = RelayType.HeroTitle,
+        )
+        effective?.let {
+            RelayMarqueeText(
+                text = it.display.artist,
+                style = RelayType.HeroArtist,
+                modifier = Modifier.padding(top = 4.dp),
+            )
+            RelayMarqueeText(
+                text = it.display.album,
+                style = RelayType.Kicker,
+                modifier = Modifier.padding(top = 6.dp),
+            )
+        }
+    }
+}
+
+@Composable
+private fun MetroSecondaryActions(
+    drawer: PlayerDrawer,
+    onQueue: () -> Unit,
+    onLyrics: () -> Unit,
+    onOptions: () -> Unit,
+) {
+    Row(
+        modifier = Modifier.fillMaxWidth().padding(top = 2.dp, start = 22.dp, end = 22.dp),
+        horizontalArrangement = Arrangement.SpaceBetween,
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        RelayIconButton(
+            RelayIcons.Queue,
+            "Queue drawer",
+            onQueue,
+            tint = if (drawer == PlayerDrawer.QUEUE) RelayColors.Signal else RelayColors.Muted,
+            hapticAction = HapticAction.TAB_CHANGE,
+        )
+        RelayIconButton(
+            RelayIcons.Lyrics,
+            "Lyrics drawer",
+            onLyrics,
+            tint = if (drawer == PlayerDrawer.LYRICS) RelayColors.Signal else RelayColors.Muted,
+            hapticAction = HapticAction.TAB_CHANGE,
+        )
+        RelayIconButton(
+            RelayIcons.More,
+            "Player options drawer",
+            onOptions,
+            tint = if (drawer == PlayerDrawer.OPTIONS) RelayColors.Signal else RelayColors.Muted,
+            hapticAction = HapticAction.TAB_CHANGE,
+        )
+    }
 }
 
 /** Zune-style justified bar: one bordered container, transport spread edge to edge. */
@@ -484,9 +782,6 @@ private fun PlayerOptionsMenu(
     Column(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(top = 8.dp)
-            .background(RelayColors.Panel)
-            .border(1.dp, RelayColors.Line)
             .padding(12.dp),
     ) {
         BasicText("PLAYER OPTIONS", style = RelayType.Utility.copy(color = RelayColors.Muted))
@@ -619,6 +914,7 @@ internal fun PlayerArtwork(
     emptyLabel: String,
     modifier: Modifier = Modifier,
     onClick: (() -> Unit)? = null,
+    contentScale: ContentScale = ContentScale.Crop,
 ) {
     val effective = track?.resolveEffectiveMetadata()
     val artworkModifier = modifier.then(
@@ -628,11 +924,11 @@ internal fun PlayerArtwork(
         AsyncImage(
             model = artworkUri,
             contentDescription = "Album cover for ${effective.display.album}",
-            contentScale = ContentScale.Crop,
+            contentScale = contentScale,
             modifier = artworkModifier,
         )
     } ?: Box(
-        modifier = artworkModifier.border(1.dp, RelayColors.Line),
+        modifier = artworkModifier,
         contentAlignment = Alignment.Center,
     ) { BasicText(emptyLabel, style = RelayType.Utility) }
 }
@@ -641,14 +937,12 @@ internal fun PlayerArtwork(
 internal fun PlayerIdentity(track: Track?, expanded: Boolean, modifier: Modifier = Modifier) {
     val effective = track?.resolveEffectiveMetadata()
     Column(modifier = modifier, verticalArrangement = Arrangement.Center) {
-        BasicText(
+        RelayMarqueeText(
             text = (effective?.display?.title ?: "NO TRACK SELECTED").asThemedTitle(),
             style = if (expanded) RelayType.Title else RelayType.Track,
-            maxLines = 1,
-            overflow = TextOverflow.Ellipsis,
         )
         effective?.let {
-            BasicText(
+            RelayMarqueeText(
                 text = if (expanded) {
                     "${it.display.artist} — ${it.display.album}"
                 } else {
@@ -656,8 +950,7 @@ internal fun PlayerIdentity(track: Track?, expanded: Boolean, modifier: Modifier
                 },
                 style = RelayType.Metadata,
                 modifier = Modifier.padding(top = 4.dp),
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
+                fadeColor = if (expanded) RelayColors.Ink else RelayColors.Panel,
             )
         }
     }

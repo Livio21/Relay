@@ -6,15 +6,6 @@ plugins {
     alias(libs.plugins.kotlin.compose.compiler) apply false
     alias(libs.plugins.jetbrains.compose) apply false
     alias(libs.plugins.ksp) apply false
-    kotlin("jvm") version "2.4.10"
-}
-
-group = "dev.relay"
-version = "0.1.0"
-
-dependencies {
-    testImplementation(kotlin("test"))
-}
-kotlin {
-    jvmToolchain(8)
+    // desktopApp applies this by ID; declaring it here puts a known version on the build classpath.
+    alias(libs.plugins.kotlin.jvm) apply false
 }

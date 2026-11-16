@@ -1,0 +1,344 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="dark">
+<title>Relay — iteration 2</title>
+<style>
+  :root{
+    --ink:#050505;--panel:#0e0e0e;--line:#414141;--paper:#fbfbf5;--muted:#c4c4ba;
+    --accent:#ff4f00;--accent-ink:#090909;
+    --sans:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif;
+    --mono:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+  }
+  *{box-sizing:border-box}
+  html{background:#151515}
+  body{margin:0;background:#151515;color:var(--paper);font-family:var(--sans);-webkit-font-smoothing:antialiased;overflow-wrap:anywhere}
+  .page-heading{max-inline-size:2100px;margin-inline:auto;padding:36px 32px 8px}
+  .kicker{margin:0 0 8px;font:11px/1 var(--mono);letter-spacing:.08em;text-transform:uppercase;color:var(--muted)}
+  h1{margin:0;font-size:30px;line-height:1.05;font-weight:700;letter-spacing:-.02em}
+  .dek{max-inline-size:82ch;margin:8px 0 0;font-size:12px;line-height:1.55;color:var(--muted)}
+  .board{max-inline-size:2100px;margin-inline:auto;padding:24px 32px 32px;display:grid;grid-template-columns:repeat(5,390px);gap:28px;justify-content:center;align-items:start}
+  .block{display:flex;flex-direction:column;gap:10px}
+  .phone{inline-size:390px;block-size:844px;background:var(--ink);border:1px solid var(--line);position:relative;overflow:hidden;display:flex;flex-direction:column}
+  .caption{margin:0;font:9px/1.4 var(--mono);letter-spacing:.05em;text-transform:uppercase;color:var(--muted)}
+  .icon{inline-size:24px;block-size:24px;fill:currentColor;display:block;flex:none}
+  .i20{inline-size:20px;block-size:20px}.i28{inline-size:28px;block-size:28px}.i32{inline-size:32px;block-size:32px}
+  .ibtn{inline-size:48px;block-size:48px;display:inline-flex;align-items:center;justify-content:center;border:0;background:transparent;color:var(--paper);padding:0;flex:none}
+  .ibtn.muted{color:var(--muted)}.ibtn.accent{color:var(--accent)}
+
+  /* Hub */
+  .hub{flex:none;block-size:64px;display:flex;align-items:flex-end;position:relative}
+  .hub-title{display:flex;align-items:baseline;gap:6px;flex:1;min-inline-size:0;padding:0 0 6px 12px;color:var(--paper)}
+  .hub-title .h-title{font-size:48px;line-height:40px;font-weight:200;letter-spacing:-1.4px;text-transform:lowercase;white-space:nowrap;overflow:hidden;text-overflow:clip}
+  .chev{color:var(--accent);margin-bottom:5px}
+  .next-peek{position:absolute;right:0;bottom:0;inline-size:64px;block-size:64px;overflow:hidden;padding:0 0 6px 8px;color:var(--muted);font-size:48px;line-height:40px;font-weight:200;letter-spacing:-1.4px;text-transform:lowercase;opacity:.78;white-space:nowrap}
+  .hub-sub{flex:none;block-size:44px;display:flex;align-items:center;gap:8px;padding:0 12px}
+  .crumbs{flex:1;font:9px/1.2 var(--mono);letter-spacing:.08em;text-transform:uppercase;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .crumbs b{color:var(--accent);font-weight:400}
+
+  /* Artwork */
+  .art{position:relative;overflow:hidden;display:block;background:#222}
+  .art::before,.art::after{content:"";position:absolute;display:block}
+  .art--lowtide{background:#17403d}
+  .art--lowtide::before{inset-inline:12%;inset-block-start:22%;block-size:16%;background:#d7dfc9}
+  .art--lowtide::after{inline-size:38%;aspect-ratio:1;border-radius:50%;background:#e6c48a;inset-inline-end:14%;inset-block-end:16%}
+  .art--fieldnotes{background:#b99a78}
+  .art--fieldnotes::before{inset:12%;border:1px solid #3b2d24}
+  .art--fieldnotes::after{inline-size:26%;aspect-ratio:1;border-radius:50%;background:#3b2d24;inset-inline-start:18%;inset-block-start:18%}
+  .art--paperradio{background:#e8e0ce}
+  .art--paperradio::before{inset-inline:16%;inset-block-start:30%;block-size:40%;background:#c2473b}
+  .art--paperradio::after{inset-inline:16%;inset-block-end:12%;block-size:2px;background:#181818}
+  .art--quiethours{background:#17233c}
+  .art--quiethours::before{inset-block:16%;inset-inline-start:22%;inline-size:12%;background:#8d99ae}
+  .art--quiethours::after{inset-block:16%;inset-inline-end:22%;inline-size:12%;background:#5b6b8c}
+  .art--saltair{background:#b9d8d6}
+  .art--saltair::before{inline-size:56%;aspect-ratio:1;border-radius:50%;border:1px solid #1d3557;inset-inline-start:22%;inset-block-start:22%}
+  .art--saltair::after{inline-size:26%;aspect-ratio:1;border-radius:50%;background:#1d3557;inset-inline-start:37%;inset-block-start:37%}
+  .art--nightferry{background:#101010}
+  .art--nightferry::before{inset-inline:0;inset-block-start:46%;block-size:12%;background:#e0b07a}
+  .art--nightferry::after{inline-size:22%;aspect-ratio:1;border-radius:50%;background:#e0b07a;inset-inline-end:18%;inset-block-start:18%}
+
+  /* Frame A: now playing accordion */
+  .np-art-window{flex:none;inline-size:390px;block-size:280px;overflow:hidden;margin-block-start:16px}
+  .np-art{inline-size:390px;block-size:390px;margin-block-start:-110px}
+  .np-info{flex:1;min-block-size:0;padding:8px 16px 0;display:flex;flex-direction:column}
+  .np-title{margin:0;font-size:40px;line-height:1.05;font-weight:200;letter-spacing:-.6px;white-space:nowrap;overflow:hidden;
+    -webkit-mask-image:linear-gradient(to right,#000 78%,transparent 100%);mask-image:linear-gradient(to right,#000 78%,transparent 100%);
+    animation:title-marquee 9s linear infinite alternate}
+  @keyframes title-marquee{from{transform:translateX(0)}to{transform:translateX(-42px)}}
+  .np-artist{margin:2px 0 0;font-size:25px;line-height:1.1;font-weight:300}
+  .np-meta{margin:4px 0 0;font:9px/1.2 var(--mono);letter-spacing:.08em;text-transform:uppercase;color:var(--muted)}
+  .np-progress{margin-block-start:10px;block-size:4px;background:var(--line)}
+  .np-progress>span{display:block;block-size:100%;inline-size:32%;background:var(--accent)}
+  .np-times{display:flex;justify-content:space-between;margin-block-start:5px;font:9px/1 var(--mono);color:var(--muted)}
+  .media{display:flex;align-items:center;justify-content:space-between;margin-block-start:8px;padding:0 10px}
+  .circle{inline-size:44px;block-size:44px;border:1px solid var(--line);border-radius:50%;display:flex;align-items:center;justify-content:center}
+  .circle.play{inline-size:56px;block-size:56px;background:var(--accent);color:var(--accent-ink);border:0}
+  .secondary{display:flex;justify-content:space-between;padding:0 34px;margin-block-start:2px}
+  .secondary .ibtn{inline-size:44px;block-size:44px}
+  .drawer{flex:none;inline-size:100%;background:#121212;border-block-start:1px solid var(--line)}
+  .drawer-handle{inline-size:30px;block-size:2px;background:#5b5b5b;margin:7px auto 3px}
+  .drawer-head{display:flex;align-items:center;justify-content:space-between;block-size:28px;padding:0 16px;font:8px/1 var(--mono);letter-spacing:.1em;color:var(--accent);text-transform:uppercase}
+  .acc-row{display:flex;align-items:center;gap:10px;block-size:44px;padding:0 16px;border-block-start:1px solid #232323;min-inline-size:0}
+  .acc-row .art{inline-size:28px;block-size:28px;flex:none}
+  .acc-title{flex:1;font-size:11px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .acc-time{font:8px/1 var(--mono);color:var(--muted)}
+
+  /* Frame B: library */
+  .lib-controls{flex:none;display:flex;align-items:center;gap:6px;padding:0 8px 4px;min-block-size:40px}
+  .seg{display:flex;gap:4px;flex:1}
+  .seg span{display:flex;align-items:center;justify-content:center;min-block-size:32px;padding:0 10px;font:8px/1 var(--mono);letter-spacing:.06em;color:var(--muted);text-transform:uppercase;border:1px solid var(--line)}
+  .seg span.on{color:var(--accent);background:var(--panel)}
+  .grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:0;padding:0}
+  .cell{min-inline-size:0}
+  .cell .art{inline-size:100%;aspect-ratio:1;border-block-end:1px solid var(--line)}
+  .cell-title{margin:0;padding:6px 8px 8px;font-size:12px;line-height:1.2;font-weight:600;white-space:nowrap;overflow:hidden;
+    -webkit-mask-image:linear-gradient(to right,#000 72%,transparent 100%);mask-image:linear-gradient(to right,#000 72%,transparent 100%)}
+  .cell-title.long{animation:marquee 7s linear infinite alternate}
+  @keyframes marquee{from{text-indent:0}to{text-indent:-34px}}
+  .recent{flex:none;display:flex;align-items:center;gap:8px;block-size:56px;padding:0 10px;border-block-start:1px solid var(--line);margin-block-start:auto}
+  .recent-label{font:7px/1 var(--mono);letter-spacing:.08em;color:var(--muted);text-transform:uppercase}
+  .recent-item{display:flex;align-items:center;gap:5px;min-inline-size:0}
+  .recent-item .art{inline-size:32px;block-size:32px;flex:none}
+  .recent-item span{font-size:9px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-inline-size:54px}
+  .mini{flex:none;block-size:56px;border-block-start:1px solid var(--line);background:var(--panel);display:flex;align-items:center;padding:0 6px}
+  .mini .art{inline-size:44px;block-size:44px;flex:none}
+  .mini-text{flex:1;min-inline-size:0;padding:0 8px}
+  .mini-text b{display:block;font-size:11px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .mini-text span{display:block;font-size:8px;color:var(--muted)}
+
+  /* Frame C: artist sections */
+  .section{padding:8px 0 0}
+  .section-head{display:flex;align-items:baseline;gap:8px;padding:0 12px 6px}
+  .section-head h2{margin:0;font-size:24px;line-height:1;font-weight:200;letter-spacing:-.5px;white-space:nowrap}
+  .section-head span{font:8px/1 var(--mono);color:var(--muted);letter-spacing:.04em;text-transform:uppercase}
+  .rail{display:flex;overflow-x:auto;scrollbar-width:none;gap:0;padding:0 0 2px}
+  .rail::-webkit-scrollbar{display:none}
+  .rail-card{flex:0 0 150px;min-inline-size:0}
+  .rail-card .art{inline-size:150px;block-size:150px}
+  .rail-title{padding:6px 6px 0;font-size:11px;font-weight:600;white-space:nowrap;overflow:hidden;
+    -webkit-mask-image:linear-gradient(to right,#000 68%,transparent 100%);mask-image:linear-gradient(to right,#000 68%,transparent 100%)}
+  .rail-meta{padding:2px 6px 8px;font:8px/1.2 var(--mono);color:var(--muted);white-space:nowrap;overflow:hidden}
+
+  /* Frame D: universal detail */
+  .detail-head{display:flex;gap:14px;padding:10px 16px 12px;border-block-end:1px solid var(--line)}
+  .detail-head .art{inline-size:150px;block-size:150px;flex:none}
+  .detail-text{min-inline-size:0;flex:1;display:flex;flex-direction:column;justify-content:flex-end}
+  .detail-kicker{font:8px/1 var(--mono);letter-spacing:.1em;color:var(--muted);text-transform:uppercase}
+  .detail-title{margin:4px 0 0;font-size:36px;line-height:.98;font-weight:200;letter-spacing:-1px}
+  .detail-meta{margin:6px 0 0;font:8px/1.3 var(--mono);color:var(--muted);text-transform:uppercase;letter-spacing:.05em}
+  .detail-actions{display:flex;gap:2px;margin-block-start:6px}
+  .detail-list{flex:1;min-block-size:0;overflow:hidden}
+  .track{display:flex;align-items:center;gap:10px;min-block-size:54px;border-block-end:1px solid var(--line);padding:0 12px}
+  .track .n{inline-size:20px;font:8px/1 var(--mono);color:var(--muted)}
+  .track .art{inline-size:34px;block-size:34px;flex:none}
+  .track-text{flex:1;min-inline-size:0}
+  .track-title{display:block;font-size:12px;font-weight:600;white-space:nowrap;overflow:hidden;
+    -webkit-mask-image:linear-gradient(to right,#000 78%,transparent 100%);mask-image:linear-gradient(to right,#000 78%,transparent 100%)}
+  .track-meta{display:block;font-size:9px;color:var(--muted)}
+  .track-time{font:8px/1 var(--mono);color:var(--muted)}
+
+  /* Frame E: frosted section menu */
+  .frost-bg{position:absolute;inset:0;background:var(--ink);overflow:hidden}
+  .frost-bg .hero{position:absolute;inset:0 0 auto;block-size:520px;opacity:.55;filter:blur(24px);transform:scale(1.06)}
+  .frost-bg .t{position:absolute;left:22px;top:80px;font-size:64px;line-height:1;font-weight:200;color:var(--paper);opacity:.75}
+  .frost-overlay{position:absolute;inset:0;background:rgba(5,5,5,.62);backdrop-filter:blur(24px) saturate(1.1);display:flex;flex-direction:column;padding:0 16px}
+  .frost-head{block-size:56px;display:flex;align-items:center;border-block-end:1px solid rgba(255,255,255,.14)}
+  .frost-head span{flex:1;font:9px/1 var(--mono);letter-spacing:.12em;text-transform:uppercase;color:var(--muted)}
+  .frost-row{display:grid;grid-template-columns:28px 1fr 18px;gap:10px;align-items:center;min-block-size:62px;border-block-end:1px solid rgba(255,255,255,.12);color:var(--paper)}
+  .frost-row.current{color:var(--accent)}
+  .frost-label{font-size:28px;line-height:1;font-weight:200;letter-spacing:-.6px;text-transform:lowercase}
+  .frost-sub{font:7px/1.2 var(--mono);letter-spacing:.08em;text-transform:uppercase;color:var(--muted);margin-top:2px}
+  .frost-row.current .frost-sub{color:var(--accent)}
+  .frost-foot{margin-top:auto;padding:12px 0 16px;font:8px/1.4 var(--mono);color:var(--muted);letter-spacing:.05em}
+
+  .foot{max-inline-size:2100px;margin:0 auto;padding:0 32px 28px;font:9px/1.4 var(--mono);color:var(--muted)}
+</style>
+</head>
+<body>
+<svg xmlns="http://www.w3.org/2000/svg" style="position:absolute;inline-size:0;block-size:0;overflow:hidden" aria-hidden="true">
+  <symbol id="i-play" viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></symbol>
+  <symbol id="i-pause" viewBox="0 0 24 24"><path d="M6 19h4V5H6v14zm8-14v14h4V5h-4z"/></symbol>
+  <symbol id="i-prev" viewBox="0 0 24 24"><path d="M6 6h2v12H6zm3.5 6l8.5 6V6z"/></symbol>
+  <symbol id="i-next" viewBox="0 0 24 24"><path d="M6 18l8.5-6L6 6v12zM16 6v12h2V6h-2z"/></symbol>
+  <symbol id="i-shuffle" viewBox="0 0 24 24"><path d="M10.59 9.17L5.41 4 4 5.41l5.17 5.17 1.42-1.41zM14.5 4l2.04 2.04L4 18.59 5.41 20 17.96 7.46 20 9.5V4h-5.5zm.33 9.41l-1.41 1.41 3.13 3.13L14.5 20H20v-5.5l-2.04 2.04-3.13-3.13z"/></symbol>
+  <symbol id="i-repeat" viewBox="0 0 24 24"><path d="M7 7h10v3l4-4-4-4v3H5v6h2V7zm10 10H7v-3l-4 4 4 4v-3h12v-6h-2v4z"/></symbol>
+  <symbol id="i-queue" viewBox="0 0 24 24"><path d="M15,6H3v2h12V6z M15,10H3v2h12V10z M3,16h8v-2H3V16z M17,6v8.18C16.69,14.07,16.35,14,16,14c-1.66,0-3,1.34-3,3s1.34,3,3,3s3-1.34,3-3V8h3V6H17z"/></symbol>
+  <symbol id="i-lyrics" viewBox="0 0 24 24"><path d="M14,9c0-2.04,1.24-3.79,3-4.57V4c0-1.1-0.9-2-2-2H4C2.9,2,2.01,2.9,2.01,4L2,22l4-4h9c1.1,0,2-0.9,2-2v-2.42C15.24,12.8,14,11.05,14,9z M10,14H6v-2h4V14z M13,11H6V9h7V11z M13,8H6V6h7V8z"/><path d="M20,6.18C19.69,6.07,19.35,6,19,6c-1.66,0-3,1.34-3,3c0,1.66,1.34,3,3,3s3-1.34,3-3V3h2V1h-4V6.18z"/></symbol>
+  <symbol id="i-more" viewBox="0 0 24 24"><path d="M12 8c1.1 0 2-.9 2-2s-.9-2-2-2-2 .9-2 2 .9 2 2 2zm0 2c-1.1 0-2 .9-2 2s.9 2 2 2 2-.9 2-2-.9-2-2-2zm0 6c-1.1 0-2 .9-2 2s.9 2 2 2 2-.9 2-2-.9-2-2-2z"/></symbol>
+  <symbol id="i-search" viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19l-4.99-5zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14z"/></symbol>
+  <symbol id="i-close" viewBox="0 0 24 24"><path d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></symbol>
+  <symbol id="i-back" viewBox="0 0 24 24"><path d="M20 11H7.83l5.59-5.59L12 4l-8 8 8 8 1.41-1.41L7.83 13H20v-2z"/></symbol>
+  <symbol id="i-chev" viewBox="0 0 24 24"><path d="M10 6L8.59 7.41 13.17 12l-4.58 4.59L10 18l6-6z"/></symbol>
+  <symbol id="i-home" viewBox="0 0 24 24"><path d="M20 2H8c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h12c1.1 0 2-.9 2-2V4c0-1.1-.9-2-2-2zm-2 5h-3v5.5c0 1.38-1.12 2.5-2.5 2.5S10 13.88 10 12.5s1.12-2.5 2.5-2.5c.57 0 1.08.19 1.5.51V5h4v2zM4 6H2v14c0 1.1.9 2 2 2h14v-2H4V6z"/></symbol>
+  <symbol id="i-insights" viewBox="0 0 24 24"><path d="M23,8c0,1.1-0.9,2-2,2c-0.18,0-0.35-0.02-0.51-0.07l-3.56,3.55C16.98,13.64,17,13.82,17,14c0,1.1-0.9,2-2,2s-2-0.9-2-2c0-0.18,0.02-0.36,0.07-0.52l-2.55-2.55C10.36,10.98,10.18,11,10,11s-0.36-0.02-0.52-0.07l-4.55,4.56C4.98,15.65,5,15.82,5,16c0,1.1-0.9,2-2,2s-2-0.9-2-2s0.9-2,2-2c0.18,0,0.35,0.02,0.51,0.07l4.56-4.55C8.02,9.36,8,9.18,8,9c0-1.1,0.9-2,2-2s2,0.9,2,2c0,0.18-0.02,0.36-0.07,0.52l2.55,2.55C14.64,12.02,14.82,12,15,12s0.36,0.02,0.52,0.07l3.55-3.56C19.02,8.35,19,8.18,19,8c0-1.1,0.9-2,2-2S23,6.9,23,8z"/></symbol>
+  <symbol id="i-settings" viewBox="0 0 24 24"><path d="M19.14,12.94c0.04-0.3,0.06-0.61,0.06-0.94c0-0.32-0.02-0.64-0.07-0.94l2.03-1.58c0.18-0.14,0.23-0.41,0.12-0.61l-1.92-3.32c-0.12-0.22-0.37-0.29-0.59-0.22l-2.39,0.96c-0.5-0.38-1.03-0.7-1.62-0.94L14.4,2.81c-0.04-0.24-0.24-0.41-0.48-0.41h-3.84c-0.24,0-0.43,0.17-0.47,0.41L9.25,5.35C8.66,5.59,8.12,5.92,7.63,6.29L5.24,5.33c-0.22-0.08-0.47,0-0.59,0.22L2.74,8.87C2.62,9.08,2.66,9.34,2.86,9.48l2.03,1.58C4.84,11.36,4.8,11.69,4.8,12s0.02,0.64,0.07,0.94l-2.03,1.58c-0.18,0.14-0.23,0.41-0.12,0.61l1.92,3.32c0.12,0.22,0.37,0.29,0.59,0.22l2.39-0.96c0.5,0.38,1.03,0.7,1.62,0.94l0.36,2.54c0.05,0.24,0.24,0.41,0.48,0.41h3.84c0.24,0,0.44-0.17,0.47-0.41l0.36-2.54c0.59-0.24,1.13-0.56,1.62-0.94l2.39,0.96c0.22,0.08,0.47,0,0.59-0.22l1.92-3.32c0.12-0.22,0.07-0.47-0.12-0.61L19.14,12.94z M12,15.6c-1.98,0-3.6-1.62-3.6-3.6s1.62-3.6,3.6-3.6s3.6,1.62,3.6,3.6S13.98,15.6,12,15.6z"/></symbol>
+</svg>
+
+<header class="page-heading">
+  <p class="kicker">Relay / iteration 2</p>
+  <h1>Accordion player, horizontal sections, universal detail</h1>
+  <p class="dek">Proposed fixes before code: one primary media row; Now Playing submenus open as a full-width bottom drawer that pushes the player up and reveals the panel fully; recently played becomes a small bottom strip; titles use a fade/marquee instead of borders; artists and playlists become vertical sections with 2.5-card rails; albums open the same detail component; the section menu is frosted and animated.</p>
+</header>
+
+<main class="board">
+
+  <!-- A: Now Playing + queue accordion -->
+  <article class="block">
+    <div class="phone">
+      <div class="hub">
+        <div class="hub-title"><span class="h-title">playing</span><svg class="icon i20 chev"><use href="#i-chev"/></svg></div>
+        <div class="next-peek">playlists</div>
+      </div>
+      <div class="hub-sub"><span class="crumbs"><b>harbor lights</b> · low tide</span><span class="ibtn"><svg class="icon i20 muted"><use href="#i-more"/></svg></span></div>
+      <div class="np-art-window"><div class="art art--lowtide np-art"></div></div>
+      <div class="np-info">
+        <h2 class="np-title">The Long Way Home (Live at the Harbor)</h2>
+        <p class="np-artist">Harbor Lights</p>
+        <p class="np-meta">Low Tide · 2004</p>
+        <div class="np-progress"><span></span></div>
+        <div class="np-times"><span>1:12</span><span>3:42</span></div>
+        <div class="media">
+          <span class="circle"><svg class="icon i20 muted"><use href="#i-shuffle"/></svg></span>
+          <span class="circle"><svg class="icon i28"><use href="#i-prev"/></svg></span>
+          <span class="circle play"><svg class="icon i32"><use href="#i-pause"/></svg></span>
+          <span class="circle"><svg class="icon i28"><use href="#i-next"/></svg></span>
+          <span class="circle"><svg class="icon i20 muted"><use href="#i-repeat"/></svg></span>
+        </div>
+        <div class="secondary">
+          <span class="ibtn accent"><svg class="icon"><use href="#i-queue"/></svg></span>
+          <span class="ibtn muted"><svg class="icon"><use href="#i-lyrics"/></svg></span>
+          <span class="ibtn muted"><svg class="icon"><use href="#i-more"/></svg></span>
+        </div>
+      </div>
+      <div class="drawer">
+        <div class="drawer-handle"></div>
+        <div class="drawer-head"><span>Queue · 4 tracks</span><span>Close</span></div>
+        <div class="acc-row"><span class="art art--lowtide"></span><span class="acc-title">Slow Return</span><span class="acc-time">4:18</span></div>
+        <div class="acc-row"><span class="art art--lowtide"></span><span class="acc-title">Tape Hiss</span><span class="acc-time">2:57</span></div>
+        <div class="acc-row"><span class="art art--lowtide"></span><span class="acc-title">Low Tide</span><span class="acc-time">5:06</span></div>
+      </div>
+    </div>
+    <p class="caption">Now playing · full-width drawer pushes the player up</p>
+  </article>
+
+  <!-- B: Library -->
+  <article class="block">
+    <div class="phone">
+      <div class="hub">
+        <div class="hub-title"><span class="h-title">library</span><svg class="icon i20 chev"><use href="#i-chev"/></svg></div>
+        <div class="next-peek">now playing</div>
+      </div>
+      <div class="lib-controls">
+        <div class="seg"><span>tracks</span><span class="on">albums</span><span>artists</span></div>
+        <span class="ibtn"><svg class="icon i20"><use href="#i-search"/></svg></span>
+      </div>
+      <div class="grid">
+        <div class="cell"><div class="art art--lowtide"></div><p class="cell-title">Low Tide</p></div>
+        <div class="cell"><div class="art art--fieldnotes"></div><p class="cell-title">Field Notes</p></div>
+        <div class="cell"><div class="art art--paperradio"></div><p class="cell-title">Paper Radio</p></div>
+        <div class="cell"><div class="art art--quiethours"></div><p class="cell-title">The Quiet Hours</p></div>
+        <div class="cell"><div class="art art--saltair"></div><p class="cell-title">Salt Air</p></div>
+        <div class="cell"><div class="art art--nightferry"></div><p class="cell-title">Night Ferry</p></div>
+        <div class="cell"><div class="art art--nightferry"></div><p class="cell-title">Harbor Glass</p></div>
+        <div class="cell"><div class="art art--saltair"></div><p class="cell-title long">Moth Season and the Long Way Home</p></div>
+        <div class="cell"><div class="art art--quiethours"></div><p class="cell-title">Low Season</p></div>
+      </div>
+      <div class="recent">
+        <span class="recent-label">Recent</span>
+        <span class="recent-item"><span class="art art--lowtide"></span><span>Salt Air</span></span>
+        <span class="recent-item"><span class="art art--fieldnotes"></span><span>Field Notes</span></span>
+        <span class="recent-item"><span class="art art--paperradio"></span><span>Paper Radio</span></span>
+      </div>
+      <div class="mini"><span class="art art--lowtide"></span><div class="mini-text"><b>Salt Air</b><span>Harbor Lights</span></div><span class="ibtn"><svg class="icon i20"><use href="#i-prev"/></svg></span><span class="ibtn"><svg class="icon i20 accent"><use href="#i-pause"/></svg></span><span class="ibtn"><svg class="icon i20"><use href="#i-next"/></svg></span></div>
+    </div>
+    <p class="caption">Library · albums grid, fade/marquee titles, small recent at bottom</p>
+  </article>
+
+  <!-- C: Artists -->
+  <article class="block">
+    <div class="phone">
+      <div class="hub">
+        <div class="hub-title"><span class="h-title">library</span><svg class="icon i20 chev"><use href="#i-chev"/></svg></div>
+        <div class="next-peek">now playing</div>
+      </div>
+      <div class="lib-controls">
+        <div class="seg"><span>tracks</span><span>albums</span><span class="on">artists</span></div>
+        <span class="ibtn"><svg class="icon i20"><use href="#i-search"/></svg></span>
+      </div>
+      <div class="section">
+        <div class="section-head"><h2>Harbor Lights</h2><span>3 albums · 12 tracks</span></div>
+        <div class="rail">
+          <div class="rail-card"><div class="art art--lowtide"></div><div class="rail-title">Low Tide</div><div class="rail-meta">2004</div></div>
+          <div class="rail-card"><div class="art art--saltair"></div><div class="rail-title">Salt Air</div><div class="rail-meta">2007</div></div>
+          <div class="rail-card"><div class="art art--quiethours"></div><div class="rail-title">The Quiet Hours</div><div class="rail-meta">2011</div></div>
+        </div>
+      </div>
+      <div class="section">
+        <div class="section-head"><h2>North Signal</h2><span>2 albums · 8 tracks</span></div>
+        <div class="rail">
+          <div class="rail-card"><div class="art art--fieldnotes"></div><div class="rail-title">Field Notes</div><div class="rail-meta">2019</div></div>
+          <div class="rail-card"><div class="art art--nightferry"></div><div class="rail-title">Night Ferry</div><div class="rail-meta">2015</div></div>
+          <div class="rail-card"><div class="art art--saltair"></div><div class="rail-title">Moth Season</div><div class="rail-meta">2018</div></div>
+        </div>
+      </div>
+      <div class="mini"><span class="art art--lowtide"></span><div class="mini-text"><b>Salt Air</b><span>Harbor Lights</span></div><span class="ibtn"><svg class="icon i20"><use href="#i-prev"/></svg></span><span class="ibtn"><svg class="icon i20 accent"><use href="#i-pause"/></svg></span><span class="ibtn"><svg class="icon i20"><use href="#i-next"/></svg></span></div>
+    </div>
+    <p class="caption">Artists · vertical sections, 2.5-card horizontal rails</p>
+  </article>
+
+  <!-- D: Universal detail -->
+  <article class="block">
+    <div class="phone">
+      <div class="hub">
+        <div class="hub-title"><span class="ibtn"><svg class="icon i20"><use href="#i-back"/></svg></span><span class="h-title">album</span></div>
+      </div>
+      <div class="detail-head">
+        <div class="art art--lowtide"></div>
+        <div class="detail-text">
+          <div class="detail-kicker">Harbor Lights · 2004</div>
+          <h2 class="detail-title">Low Tide</h2>
+          <div class="detail-meta">10 tracks · 42 min</div>
+          <div class="detail-actions"><span class="ibtn"><svg class="icon i20"><use href="#i-play"/></svg></span><span class="ibtn"><svg class="icon i20"><use href="#i-shuffle"/></svg></span><span class="ibtn"><svg class="icon i20"><use href="#i-more"/></svg></span></div>
+        </div>
+      </div>
+      <div class="detail-list">
+        <div class="track"><span class="n">01</span><span class="art art--lowtide"></span><span class="track-text"><span class="track-title">Salt Air</span><span class="track-meta">Harbor Lights</span></span><span class="track-time">3:42</span></div>
+        <div class="track"><span class="n">02</span><span class="art art--lowtide"></span><span class="track-text"><span class="track-title">Slow Return</span><span class="track-meta">Harbor Lights</span></span><span class="track-time">4:18</span></div>
+        <div class="track"><span class="n">03</span><span class="art art--lowtide"></span><span class="track-text"><span class="track-title">Tape Hiss</span><span class="track-meta">Harbor Lights</span></span><span class="track-time">2:57</span></div>
+        <div class="track"><span class="n">04</span><span class="art art--lowtide"></span><span class="track-text"><span class="track-title">Low Tide</span><span class="track-meta">Harbor Lights</span></span><span class="track-time">5:06</span></div>
+        <div class="track"><span class="n">05</span><span class="art art--lowtide"></span><span class="track-text"><span class="track-title">Signal Fires</span><span class="track-meta">Harbor Lights</span></span><span class="track-time">3:31</span></div>
+        <div class="track"><span class="n">06</span><span class="art art--lowtide"></span><span class="track-text"><span class="track-title">Paper Lanterns</span><span class="track-meta">Harbor Lights</span></span><span class="track-time">4:02</span></div>
+        <div class="track"><span class="n">07</span><span class="art art--lowtide"></span><span class="track-text"><span class="track-title">Northbound</span><span class="track-meta">Harbor Lights</span></span><span class="track-time">3:48</span></div>
+      </div>
+    </div>
+    <p class="caption">Universal detail · album / artist / playlist</p>
+  </article>
+
+  <!-- E: Section menu -->
+  <article class="block">
+    <div class="phone">
+      <div class="frost-bg">
+        <div class="hero art art--lowtide"></div>
+        <div class="t">playing</div>
+      </div>
+      <div class="frost-overlay">
+        <div class="frost-head"><span>Sections</span><span class="ibtn"><svg class="icon i20"><use href="#i-close"/></svg></span></div>
+        <div class="frost-row"><svg class="icon"><use href="#i-home"/></svg><span><span class="frost-label">library</span><span class="frost-sub">albums · artists · songs</span></span><svg class="icon i20 muted"><use href="#i-chev"/></svg></div>
+        <div class="frost-row current"><svg class="icon"><use href="#i-play"/></svg><span><span class="frost-label">now playing</span><span class="frost-sub">what's on</span></span><svg class="icon i20"><use href="#i-chev"/></svg></div>
+        <div class="frost-row"><svg class="icon"><use href="#i-queue"/></svg><span><span class="frost-label">playlists</span><span class="frost-sub">your lists</span></span><svg class="icon i20 muted"><use href="#i-chev"/></svg></div>
+        <div class="frost-row"><svg class="icon"><use href="#i-insights"/></svg><span><span class="frost-label">insights</span><span class="frost-sub">listening</span></span><svg class="icon i20 muted"><use href="#i-chev"/></svg></div>
+        <div class="frost-row"><svg class="icon"><use href="#i-queue"/></svg><span><span class="frost-label">extensions</span><span class="frost-sub">sources</span></span><svg class="icon i20 muted"><use href="#i-chev"/></svg></div>
+        <div class="frost-row"><svg class="icon"><use href="#i-settings"/></svg><span><span class="frost-label">settings</span><span class="frost-sub">relay</span></span><svg class="icon i20 muted"><use href="#i-chev"/></svg></div>
+        <div class="frost-foot">CURRENT SECTION — BLURRED BEHIND, SLIDE + FADE IN</div>
+      </div>
+    </div>
+    <p class="caption">Frosted sections menu · current section visible behind</p>
+  </article>
+
+</main>
+<p class="foot">Behaviour notes: submenus are full-width drawers. Universal text rule: one line, no reflow; a right-edge fade always marks truncation, and only overflowing text loops (static under reduced motion). Settings submenu back returns to Settings root; all cards open the universal detail component. Icons: Material Icons, Apache-2.0.</p>
+</body>
+</html>

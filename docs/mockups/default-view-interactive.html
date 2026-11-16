@@ -1,0 +1,741 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="color-scheme" content="dark">
+<title>Relay — default view, interactive</title>
+<style>
+  :root {
+    --ink: #050505;
+    --panel: #0e0e0e;
+    --line: #414141;
+    --paper: #fbfbf5;
+    --muted: #c4c4ba;
+    --accent: #ff4f00;
+    --accent-ink: #090909;
+    --sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+    --mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  }
+  * { box-sizing: border-box; }
+  html { background: #151515; }
+  body {
+    margin: 0; background: #151515; color: var(--paper);
+    font-family: var(--sans); -webkit-font-smoothing: antialiased;
+    overflow-wrap: anywhere;
+  }
+
+  .page-heading { max-inline-size: 620px; margin-inline: auto; padding: 36px 24px 8px; }
+  .kicker { margin: 0 0 8px; font: 11px/1 var(--mono); letter-spacing: .08em; text-transform: uppercase; color: var(--muted); }
+  .page-heading h1 { margin: 0; font-size: 28px; line-height: 1.05; font-weight: 700; letter-spacing: -.01em; }
+  .dek { margin: 8px 0 0; font-size: 12px; line-height: 1.55; color: var(--muted); }
+
+  .stage { max-inline-size: 620px; margin-inline: auto; padding: 20px 24px 32px; display: flex; flex-direction: column; align-items: center; gap: 12px; }
+  .phone { inline-size: 390px; block-size: 844px; background: var(--ink); border: 1px solid var(--line); position: relative; overflow: hidden; flex: none; }
+  .caption { margin: 0; font: 10px/1.4 var(--mono); letter-spacing: .06em; text-transform: uppercase; color: var(--muted); align-self: flex-start; inline-size: 390px; }
+
+  .icon { inline-size: 24px; block-size: 24px; fill: currentColor; display: block; flex: none; }
+  .icon-22 { inline-size: 22px; block-size: 22px; }
+  .icon-28 { inline-size: 28px; block-size: 28px; }
+  .icon-32 { inline-size: 32px; block-size: 32px; }
+  .ibtn { inline-size: 48px; block-size: 48px; display: inline-flex; align-items: center; justify-content: center; border: 0; background: transparent; color: var(--paper); padding: 0; flex: none; cursor: pointer; touch-action: manipulation; }
+  .sr-only { position: absolute; inline-size: 1px; block-size: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0,0,0,0); white-space: nowrap; border: 0; }
+  .ibtn.muted { color: var(--muted); }
+  .ibtn.accent { color: var(--accent); }
+
+  /* Horizontal panorama: 86% page + the next section peeking. */
+  .pager {
+    position: absolute; inset: 0; display: flex; overflow-x: auto; overflow-y: hidden;
+    scroll-snap-type: x mandatory; scrollbar-width: none; overscroll-behavior-x: contain;
+    cursor: grab;
+  }
+  .pager::-webkit-scrollbar { display: none; }
+  .pager.dragging { cursor: grabbing; }
+  .page {
+    flex: 0 0 100%; block-size: 100%; position: relative; background: var(--ink);
+    scroll-snap-align: start; padding: 0 0 73px; overflow-y: auto; overflow-x: hidden;
+  }
+  .page.np { padding-block-end: 0; overflow-y: hidden; display: flex; flex-direction: column; }
+
+  .hub { padding: 8px 12px 0; flex: none; }
+  .hub-top { display: flex; align-items: flex-end; gap: 8px; min-inline-size: 0; }
+  .hub-title {
+    display: flex; touch-action: manipulation; align-items: baseline; gap: 6px;
+    flex: 1; min-inline-size: 0;
+    padding: 0; border: 0; background: transparent; color: var(--paper);
+    text-align: start; cursor: pointer;
+  }
+  .h-title {
+    display: block; flex: 0 1 auto; min-inline-size: 0; font-size: 52px; line-height: .86; font-weight: 200;
+    letter-spacing: -.04em; text-transform: lowercase; white-space: nowrap; overflow: hidden;
+  }
+  .next-peek {
+    flex: 0 0 64px; block-size: 56px; overflow: hidden; white-space: nowrap;
+    margin-inline-end: -12px; border: 0; background: transparent;
+    color: var(--muted); font: 200 52px/.86 var(--sans); letter-spacing: -.04em;
+    text-transform: lowercase; text-align: start; padding: 0 0 0 10px;
+    cursor: pointer; touch-action: manipulation; opacity: .78;
+  }
+  .next-peek:hover, .next-peek:focus-visible { opacity: 1; color: var(--paper); }
+  .chev { color: var(--accent); margin-block-end: 7px; }
+  .hub-sub { display: flex; align-items: center; justify-content: space-between; gap: 8px; min-block-size: 48px; }
+  .crumbs { font: 9px/1.2 var(--mono); letter-spacing: .08em; text-transform: uppercase; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .crumbs b { color: var(--accent); font-weight: 400; }
+  .actions { display: flex; flex: none; }
+
+  /* Now playing */
+  .np-body { flex: 1; min-block-size: 0; display: flex; flex-direction: column; }
+  .np-stage { position: relative; flex: 0 0 61.8%; min-block-size: 0; overflow: hidden; display: flex; align-items: center; justify-content: center; background: var(--ink); }
+  .np-ambient { position: absolute; inset: -14px; opacity: .42; filter: blur(38px); transform: translateX(calc(var(--px, 0) * -10px)) scale(1.18); }
+  .np-art { position: relative; z-index: 1; inline-size: 100%; aspect-ratio: 1; border-block: 1px solid var(--line); transform: translateX(calc(var(--px, 0) * 5px)); }
+  .np-info { flex: 1; min-block-size: 0; padding: 13px 16px 10px; display: flex; flex-direction: column; }
+  .np-title { margin: 0; font-size: 40px; line-height: .96; font-weight: 200; letter-spacing: -.02em; text-wrap: balance; }
+  .np-artist { margin: 3px 0 0; font-size: 25px; line-height: 1.05; font-weight: 300; }
+  .np-meta { margin: 4px 0 0; font: 9px/1.2 var(--mono); letter-spacing: .08em; text-transform: uppercase; color: var(--muted); }
+  .np-progress { margin-block-start: 14px; block-size: 4px; background: var(--line); }
+  .np-progress > span { display: block; block-size: 100%; inline-size: 32%; background: var(--accent); }
+  .np-times { display: flex; justify-content: space-between; margin-block-start: 5px; font: 9px/1 var(--mono); color: var(--muted); }
+  .np-controls { margin-block-start: 9px; display: flex; align-items: center; justify-content: space-between; }
+  .circle { touch-action: manipulation; inline-size: 48px; block-size: 48px; border: 1px solid var(--line); border-radius: 50%; background: transparent; color: var(--paper); display: flex; align-items: center; justify-content: center; padding: 0; flex: none; cursor: pointer; }
+  .circle.play { inline-size: 60px; block-size: 60px; border: 0; background: var(--accent); color: var(--accent-ink); }
+  .np-secondary { margin-block-start: 5px; display: flex; justify-content: space-between; }
+
+  /* Library */
+  .lib-body { padding-block-end: 0; }
+  .grid { display: grid; inline-size: 100%; border-block-start: 1px solid var(--line); }
+  .grid[data-view="three"] { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  .grid[data-view="two"] { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .grid[data-view="list"] { grid-template-columns: 1fr; }
+  .cell { position: relative; min-inline-size: 0; border-block-end: 1px solid var(--line); }
+  .grid[data-view="three"] .cell:not(:nth-child(3n)) { border-inline-end: 1px solid var(--line); }
+  .grid[data-view="two"] .cell:nth-child(odd) { border-inline-end: 1px solid var(--line); }
+  .cell .art { inline-size: 100%; aspect-ratio: 1; display: block; }
+  .cell-text { padding: 7px 9px 9px; }
+  .cell-title { display: block; font-size: 13px; line-height: 1.2; font-weight: 600; letter-spacing: -.01em; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .grid[data-view="three"] .cell-meta { display: none; }
+  .cell-meta { display: block; margin-block-start: 2px; font: 8px/1.2 var(--mono); letter-spacing: .02em; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .grid[data-view="two"] .cell-title { font-size: 15px; }
+  .grid[data-view="two"] .cell-meta { font-size: 10px; }
+  .cell.current { box-shadow: inset 0 0 0 2px var(--accent); }
+  .grid[data-view="list"] .cell { display: flex; align-items: center; min-block-size: 68px; border-inline-end: 0; }
+  .grid[data-view="list"] .cell .art { inline-size: 52px; block-size: 52px; flex: none; margin: 8px 12px; }
+  .grid[data-view="list"] .cell-text { flex: 1; padding: 0 12px 0 0; }
+  .grid[data-view="list"] .cell-title { font-size: 15px; }
+  .grid[data-view="list"] .cell-meta { font-size: 10px; }
+  .grid[data-view="list"] .cell.current { box-shadow: inset 4px 0 0 var(--accent); }
+
+  /* Simple section content */
+  .section-body { padding: 8px 16px 0; }
+  .list-row { display: flex; align-items: center; gap: 12px; min-block-size: 68px; border-block-end: 1px solid var(--line); }
+  .list-row .art { inline-size: 48px; block-size: 48px; flex: none; }
+  .list-text { flex: 1; min-inline-size: 0; }
+  .list-title { display: block; font-size: 15px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .list-meta { display: block; margin-block-start: 2px; font: 9px/1.2 var(--mono); letter-spacing: .03em; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .list-end { font: 9px/1 var(--mono); color: var(--muted); }
+  .big-stat { margin: 18px 0 0; font-size: 76px; line-height: .82; font-weight: 200; letter-spacing: -.04em; }
+  .stat-label { margin: 6px 0 0; font: 9px/1.3 var(--mono); letter-spacing: .1em; text-transform: uppercase; color: var(--muted); }
+  .stat-row { display: flex; gap: 34px; margin-block-start: 22px; }
+  .stat-small { font-size: 28px; line-height: 1; font-weight: 200; }
+  .stat-small-label { margin-block-start: 4px; font: 8px/1.2 var(--mono); color: var(--muted); text-transform: uppercase; }
+  .numbered { display: flex; align-items: center; gap: 12px; min-block-size: 54px; border-block-end: 1px solid var(--line); }
+  .num { inline-size: 24px; font: 9px/1 var(--mono); color: var(--muted); }
+  .numbered .name { flex: 1; font-size: 15px; font-weight: 600; }
+  .numbered .count { font: 9px/1 var(--mono); color: var(--muted); }
+
+  /* Compact header after the giant title scrolls away. */
+  .compact-bar {
+    position: absolute; inset-inline: 0; inset-block-start: 0; z-index: 15;
+    block-size: 48px; display: flex; align-items: center;
+    background: rgba(10, 10, 10, .78); backdrop-filter: blur(18px) saturate(1.1);
+    border-block-end: 1px solid var(--line);
+    opacity: 0; transform: translateY(-100%); pointer-events: none;
+    transition: opacity .16s ease, transform .16s ease;
+  }
+  .compact-bar.visible { opacity: 1; transform: translateY(0); pointer-events: auto; }
+  .compact-bar button {
+    inline-size: 100%; block-size: 48px; display: flex; align-items: center; gap: 8px;
+    padding: 0 16px; border: 0; background: transparent; color: var(--paper);
+    text-align: start; cursor: pointer;
+  }
+  .compact-title { font-size: 16px; line-height: 1; font-weight: 300; letter-spacing: -.01em; text-transform: lowercase; }
+  .compact-bar .chev { color: var(--accent); margin: 0; }
+
+  /* Mini player */
+  .mini {
+    position: absolute; inset-inline: 0; inset-block-end: 0; z-index: 10;
+    background: rgba(10, 10, 10, .86); backdrop-filter: blur(20px) saturate(1.15);
+    border-block-start: 1px solid var(--line);
+    transition: opacity .18s ease, transform .18s ease;
+  }
+  .mini.hidden { opacity: 0; transform: translateY(10px); pointer-events: none; }
+  .mini-progress { block-size: 3px; background: var(--line); }
+  .mini-progress > span { display: block; block-size: 100%; inline-size: 32%; background: var(--accent); }
+  .mini-row { block-size: 70px; display: flex; align-items: center; }
+  .mini-row .art { inline-size: 64px; block-size: 64px; flex: none; }
+  .mini-text { flex: 1; min-inline-size: 0; padding-inline: 12px; }
+  .mini-title { display: block; font-size: 14px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .mini-meta { display: block; margin-block-start: 2px; font-size: 10px; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+  /* Frosted section menu */
+  .menu {
+    position: absolute; inset: 0; z-index: 30; background: rgba(5, 5, 5, .72);
+    backdrop-filter: blur(30px) saturate(1.1); display: flex; flex-direction: column;
+    padding: 8px 16px 16px; opacity: 0; transform: translateY(-12px); pointer-events: none;
+    transition: opacity .22s ease, transform .22s ease;
+  }
+  .menu.open { opacity: 1; transform: translateY(0); pointer-events: auto; }
+  .menu:focus { outline: none; }
+  .menu-head { min-block-size: 52px; display: flex; align-items: center; gap: 12px; border-block-end: 1px solid var(--line); }
+  .menu-head .label { flex: 1; font: 9px/1 var(--mono); letter-spacing: .12em; text-transform: uppercase; color: var(--muted); }
+  .menu-row {
+    touch-action: manipulation; display: grid; grid-template-columns: 32px 1fr 24px; align-items: center; gap: 12px;
+    min-block-size: 64px; inline-size: 100%; padding: 0; border: 0; border-block-end: 1px solid rgba(255,255,255,.1);
+    background: transparent; color: var(--paper); text-align: start; cursor: pointer;
+  }
+  .menu-row .menu-label { display: block; font-size: 30px; line-height: .95; font-weight: 200; letter-spacing: -.02em; text-transform: lowercase; }
+  .menu-row .menu-sub { display: block; margin-block-start: 2px; font: 8px/1.2 var(--mono); letter-spacing: .08em; text-transform: uppercase; color: var(--muted); }
+  .menu-row.current { color: var(--accent); }
+  .menu-row.current .menu-sub { color: var(--accent); }
+  .menu-row .chev { color: var(--muted); margin: 0; }
+
+  :where(button, a, [tabindex]):focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+  @media (prefers-reduced-motion: reduce) {
+    .menu, .mini, .compact-bar { transition: none; }
+    .np-ambient, .np-art { transform: none !important; }
+    .pager { scroll-behavior: auto; }
+  }
+
+  @media (max-width: 640px) {
+    .page-heading { padding-inline: 16px; }
+    .stage { padding-inline: 8px; }
+    .phone { inline-size: 390px; }
+  }
+
+  /* Flat album art is content, not UI chrome. */
+  .art { position: relative; overflow: hidden; display: block; background: #222; }
+  .art::before, .art::after { content: ""; position: absolute; display: block; }
+  .art--lowtide { background: #17403d; }
+  .art--lowtide::before { inset-inline: 12%; inset-block-start: 22%; block-size: 16%; background: #d7dfc9; }
+  .art--lowtide::after { inline-size: 38%; aspect-ratio: 1; border-radius: 50%; background: #e6c48a; inset-inline-end: 14%; inset-block-end: 16%; }
+  .art--fieldnotes { background: #b99a78; }
+  .art--fieldnotes::before { inset: 12%; border: 1px solid #3b2d24; }
+  .art--fieldnotes::after { inline-size: 26%; aspect-ratio: 1; border-radius: 50%; background: #3b2d24; inset-inline-start: 18%; inset-block-start: 18%; }
+  .art--paperradio { background: #e8e0ce; }
+  .art--paperradio::before { inset-inline: 16%; inset-block-start: 30%; block-size: 40%; background: #c2473b; }
+  .art--paperradio::after { inset-inline: 16%; inset-block-end: 12%; block-size: 2px; background: #181818; }
+  .art--quiethours { background: #17233c; }
+  .art--quiethours::before { inset-block: 16%; inset-inline-start: 22%; inline-size: 12%; background: #8d99ae; }
+  .art--quiethours::after { inset-block: 16%; inset-inline-end: 22%; inline-size: 12%; background: #5b6b8c; }
+  .art--saltair { background: #b9d8d6; }
+  .art--saltair::before { inline-size: 56%; aspect-ratio: 1; border-radius: 50%; border: 1px solid #1d3557; inset-inline-start: 22%; inset-block-start: 22%; }
+  .art--saltair::after { inline-size: 26%; aspect-ratio: 1; border-radius: 50%; background: #1d3557; inset-inline-start: 37%; inset-block-start: 37%; }
+  .art--nightferry { background: #101010; }
+  .art--nightferry::before { inset-inline: 0; inset-block-start: 46%; block-size: 12%; background: #e0b07a; }
+  .art--nightferry::after { inline-size: 22%; aspect-ratio: 1; border-radius: 50%; background: #e0b07a; inset-inline-end: 18%; inset-block-start: 18%; }
+</style>
+</head>
+<body>
+
+<svg xmlns="http://www.w3.org/2000/svg" style="position:absolute;inline-size:0;block-size:0;overflow:hidden" aria-hidden="true">
+  <symbol id="i-play" viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></symbol>
+  <symbol id="i-pause" viewBox="0 0 24 24"><path d="M6 19h4V5H6v14zm8-14v14h4V5h-4z"/></symbol>
+  <symbol id="i-next" viewBox="0 0 24 24"><path d="M6 18l8.5-6L6 6v12zM16 6v12h2V6h-2z"/></symbol>
+  <symbol id="i-prev" viewBox="0 0 24 24"><path d="M6 6h2v12H6zm3.5 6l8.5 6V6z"/></symbol>
+  <symbol id="i-shuffle" viewBox="0 0 24 24"><path d="M10.59 9.17L5.41 4 4 5.41l5.17 5.17 1.42-1.41zM14.5 4l2.04 2.04L4 18.59 5.41 20 17.96 7.46 20 9.5V4h-5.5zm.33 9.41l-1.41 1.41 3.13 3.13L14.5 20H20v-5.5l-2.04 2.04-3.13-3.13z"/></symbol>
+  <symbol id="i-repeat" viewBox="0 0 24 24"><path d="M7 7h10v3l4-4-4-4v3H5v6h2V7zm10 10H7v-3l-4 4 4 4v-3h12v-6h-2v4z"/></symbol>
+  <symbol id="i-heart" viewBox="0 0 24 24"><path d="M16.5 3c-1.74 0-3.41.81-4.5 2.09C10.91 3.81 9.24 3 7.5 3 4.42 3 2 5.42 2 8.5c0 3.78 3.4 6.86 8.55 11.54L12 21.35l1.45-1.32C18.6 15.36 22 12.28 22 8.5 22 5.42 19.58 3 16.5 3zm-4.4 15.55l-.1.1-.1-.1C7.14 14.24 4 11.39 4 8.5 4 6.5 5.5 5 7.5 5c1.54 0 3.04.99 3.57 2.36h1.87C13.46 5.99 14.96 5 16.5 5c2 0 3.5 1.5 3.5 3.5 0 2.89-3.14 5.74-7.9 10.05z"/></symbol>
+  <symbol id="i-queue" viewBox="0 0 24 24"><path d="M15,6H3v2h12V6z M15,10H3v2h12V10z M3,16h8v-2H3V16z M17,6v8.18C16.69,14.07,16.35,14,16,14c-1.66,0-3,1.34-3,3s1.34,3,3,3s3-1.34,3-3V8h3V6H17z"/></symbol>
+  <symbol id="i-lyrics" viewBox="0 0 24 24"><path d="M14,9c0-2.04,1.24-3.79,3-4.57V4c0-1.1-0.9-2-2-2H4C2.9,2,2.01,2.9,2.01,4L2,22l4-4h9c1.1,0,2-0.9,2-2v-2.42C15.24,12.8,14,11.05,14,9z M10,14H6v-2h4V14z M13,11H6V9h7V11z M13,8H6V6h7V8z"/><path d="M20,6.18C19.69,6.07,19.35,6,19,6c-1.66,0-3,1.34-3,3c0,1.66,1.34,3,3,3s3-1.34,3-3V3h2V1h-4V6.18z"/></symbol>
+  <symbol id="i-more" viewBox="0 0 24 24"><path d="M12 8c1.1 0 2-.9 2-2s-.9-2-2-2-2 .9-2 2 .9 2 2 2zm0 2c-1.1 0-2 .9-2 2s.9 2 2 2 2-.9 2-2-.9-2-2-2zm0 6c-1.1 0-2 .9-2 2s.9 2 2 2 2-.9 2-2-.9-2-2-2z"/></symbol>
+  <symbol id="i-search" viewBox="0 0 24 24"><path d="M15.5 14h-.79l-.28-.27C15.41 12.59 16 11.11 16 9.5 16 5.91 13.09 3 9.5 3S3 5.91 3 9.5 5.91 16 9.5 16c1.61 0 3.09-.59 4.23-1.57l.27.28v.79l5 4.99L20.49 19l-4.99-5zm-6 0C7.01 14 5 11.99 5 9.5S7.01 5 9.5 5 14 7.01 14 9.5 11.99 14 9.5 14z"/></symbol>
+  <symbol id="i-library" viewBox="0 0 24 24"><path d="M20 2H8c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h12c1.1 0 2-.9 2-2V4c0-1.1-.9-2-2-2zm-2 5h-3v5.5c0 1.38-1.12 2.5-2.5 2.5S10 13.88 10 12.5s1.12-2.5 2.5-2.5c.57 0 1.08.19 1.5.51V5h4v2zM4 6H2v14c0 1.1.9 2 2 2h14v-2H4V6z"/></symbol>
+  <symbol id="i-insights" viewBox="0 0 24 24"><path d="M23,8c0,1.1-0.9,2-2,2c-0.18,0-0.35-0.02-0.51-0.07l-3.56,3.55C16.98,13.64,17,13.82,17,14c0,1.1-0.9,2-2,2s-2-0.9-2-2c0-0.18,0.02-0.36,0.07-0.52l-2.55-2.55C10.36,10.98,10.18,11,10,11s-0.36-0.02-0.52-0.07l-4.55,4.56C4.98,15.65,5,15.82,5,16c0,1.1-0.9,2-2,2s-2-0.9-2-2s0.9-2,2-2c0.18,0,0.35,0.02,0.51,0.07l4.56-4.55C8.02,9.36,8,9.18,8,9c0-1.1,0.9-2,2-2s2,0.9,2,2c0,0.18-0.02,0.36-0.07,0.52l2.55,2.55C14.64,12.02,14.82,12,15,12s0.36,0.02,0.52,0.07l3.55-3.56C19.02,8.35,19,8.18,19,8c0-1.1,0.9-2,2-2S23,6.9,23,8z"/></symbol>
+  <symbol id="i-extension" viewBox="0 0 24 24"><path d="M20.5 11H19V7c0-1.1-.9-2-2-2h-4V3.5C13 2.12 11.88 1 10.5 1S8 2.12 8 3.5V5H4c-1.1 0-1.99.9-1.99 2v3.8H3.5c1.49 0 2.7 1.21 2.7 2.7s-1.21 2.7-2.7 2.7H2V20c0 1.1.9 2 2 2h3.8v-1.5c0-1.49 1.21-2.7 2.7-2.7 1.49 0 2.7 1.21 2.7 2.7V22H17c1.1 0 2-.9 2-2v-4h1.5c1.38 0 2.5-1.12 2.5-2.5S21.88 11 20.5 11z"/></symbol>
+  <symbol id="i-settings" viewBox="0 0 24 24"><path d="M19.14,12.94c0.04-0.3,0.06-0.61,0.06-0.94c0-0.32-0.02-0.64-0.07-0.94l2.03-1.58c0.18-0.14,0.23-0.41,0.12-0.61l-1.92-3.32c-0.12-0.22-0.37-0.29-0.59-0.22l-2.39,0.96c-0.5-0.38-1.03-0.7-1.62-0.94L14.4,2.81c-0.04-0.24-0.24-0.41-0.48-0.41h-3.84c-0.24,0-0.43,0.17-0.47,0.41L9.25,5.35C8.66,5.59,8.12,5.92,7.63,6.29L5.24,5.33c-0.22-0.08-0.47,0-0.59,0.22L2.74,8.87C2.62,9.08,2.66,9.34,2.86,9.48l2.03,1.58C4.84,11.36,4.8,11.69,4.8,12s0.02,0.64,0.07,0.94l-2.03,1.58c-0.18,0.14-0.23,0.41-0.12,0.61l1.92,3.32c0.12,0.22,0.37,0.29,0.59,0.22l2.39-0.96c0.5,0.38,1.03,0.7,1.62,0.94l0.36,2.54c0.05,0.24,0.24,0.41,0.48,0.41h3.84c0.24,0,0.44-0.17,0.47-0.41l0.36-2.54c0.59-0.24,1.13-0.56,1.62-0.94l2.39,0.96c0.22,0.08,0.47,0,0.59-0.22l1.92-3.32c0.12-0.22,0.07-0.47-0.12-0.61L19.14,12.94z M12,15.6c-1.98,0-3.6-1.62-3.6-3.6s1.62-3.6,3.6-3.6s3.6,1.62,3.6,3.6S13.98,15.6,12,15.6z"/></symbol>
+  <symbol id="i-close" viewBox="0 0 24 24"><path d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></symbol>
+  <symbol id="i-chev-down" viewBox="0 0 24 24"><path d="M16.59 8.59L12 13.17 7.41 8.59 6 10l6 6 6-6z"/></symbol>
+  <symbol id="i-chev-right" viewBox="0 0 24 24"><path d="M10 6L8.59 7.41 13.17 12l-4.58 4.59L10 18l6-6z"/></symbol>
+  <symbol id="i-grid" viewBox="0 0 24 24"><path d="M14.67,5v6.5H9.33V5H14.67z M15.67,11.5H21V5h-5.33V11.5z M14.67,19v-6.5H9.33V19H14.67z M15.67,12.5V19H21v-6.5H15.67z M8.33,12.5H3V19h5.33V12.5z M8.33,11.5V5H3v6.5H8.33z"/></symbol>
+  <symbol id="i-agenda" viewBox="0 0 24 24"><path d="M19,13H5c-1.1,0-2,0.9-2,2v4c0,1.1,0.9,2,2,2h14c1.1,0,2-0.9,2-2v-4C21,13.9,20.1,13,19,13z M19,3H5C3.9,3,3,3.9,3,5v4c0,1.1,0.9,2,2,2h14c1.1,0,2-0.9,2-2V5C21,3.9,20.1,3,19,3z"/></symbol>
+  <symbol id="i-list" viewBox="0 0 24 24"><path d="M3,14h4v-4H3V14z M3,19h4v-4H3V19z M3,9h4V5H3V9z M8,14h13v-4H8V14z M8,19h13v-4H8V19z M8,5v4h13V5H8z"/></symbol>
+  <symbol id="i-add" viewBox="0 0 24 24"><path d="M19 13h-6v6h-2v-6H5v-2h6V5h2v6h6v2z"/></symbol>
+</svg>
+
+<header class="page-heading">
+  <p class="kicker">Relay / default view / interactive</p>
+  <h1>Panorama, not pages</h1>
+  <p class="dek">Drag or swipe the phone. Only the next section's title peeks at the edge — no next content; the giant lowercase title is the section menu; the Library icon cycles 3-up, 2-up and list. Icons, blur and the 61.8 / 38.2 player are live.</p>
+</header>
+
+<main class="stage">
+  <div class="phone" id="phone">
+
+    <div class="pager" id="pager" role="region" aria-roledescription="carousel" aria-label="Sections" tabindex="0">
+
+      <!-- Now playing -->
+      <section class="page np" data-title="now playing" data-index="0" role="group" aria-roledescription="slide" aria-label="1 of 6: now playing">
+        <header class="hub">
+          <div class="hub-top">
+            <button class="hub-title" data-menu aria-haspopup="dialog" aria-expanded="false">
+              <span class="h-title">now playing</span>
+              <svg class="icon icon-22 chev"><use href="#i-chev-down"/></svg>
+            </button>
+            <button class="next-peek" data-next="1" aria-label="Go to library"><span>library</span></button>
+          </div>
+          <div class="hub-sub">
+            <span class="crumbs"><b>harbor lights</b> · low tide</span>
+            <span class="actions">
+              <button class="ibtn" aria-label="More"><svg class="icon"><use href="#i-more"/></svg></button>
+            </span>
+          </div>
+        </header>
+        <div class="np-body">
+          <div class="np-stage">
+            <div class="np-ambient art art--lowtide" aria-hidden="true"></div>
+            <div class="np-art art art--lowtide" aria-hidden="true"></div>
+          </div>
+          <div class="np-info">
+            <h2 class="np-title">Salt Air</h2>
+            <p class="np-artist">Harbor Lights</p>
+            <p class="np-meta">Low Tide · 2004</p>
+            <div class="np-progress"><span></span></div>
+            <div class="np-times"><span>1:12</span><span>3:42</span></div>
+            <div class="np-controls">
+              <button class="circle" aria-label="Shuffle"><svg class="icon icon-22"><use href="#i-shuffle"/></svg></button>
+              <button class="circle" aria-label="Previous"><svg class="icon"><use href="#i-prev"/></svg></button>
+              <button class="circle play" data-play aria-label="Pause"><svg class="icon icon-32"><use href="#i-pause"/></svg></button>
+              <button class="circle" aria-label="Next"><svg class="icon"><use href="#i-next"/></svg></button>
+              <button class="circle" aria-label="Repeat"><svg class="icon icon-22"><use href="#i-repeat"/></svg></button>
+            </div>
+            <div class="np-secondary">
+              <button class="ibtn" aria-label="Save"><svg class="icon"><use href="#i-heart"/></svg></button>
+              <button class="ibtn" aria-label="Queue"><svg class="icon"><use href="#i-queue"/></svg></button>
+              <button class="ibtn" aria-label="Lyrics"><svg class="icon"><use href="#i-lyrics"/></svg></button>
+              <button class="ibtn" aria-label="More"><svg class="icon"><use href="#i-more"/></svg></button>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- Library -->
+      <section class="page" data-title="library" data-index="1" role="group" aria-roledescription="slide" aria-label="2 of 6: library">
+        <header class="hub">
+          <div class="hub-top">
+            <button class="hub-title" data-menu aria-haspopup="dialog" aria-expanded="false">
+              <span class="h-title">library</span>
+              <svg class="icon icon-22 chev"><use href="#i-chev-down"/></svg>
+            </button>
+            <button class="next-peek" data-next="2" aria-label="Go to playlists"><span>playlists</span></button>
+          </div>
+          <div class="hub-sub">
+            <span class="crumbs"><b>albums</b> · artists</span>
+            <span class="actions">
+              <button class="ibtn" aria-label="Search"><svg class="icon"><use href="#i-search"/></svg></button>
+              <button class="ibtn accent" id="viewToggle" aria-label="Change library view"><svg class="icon"><use href="#i-grid"/></svg></button>
+              <button class="ibtn" aria-label="More"><svg class="icon"><use href="#i-more"/></svg></button>
+            </span>
+          </div>
+        </header>
+        <div class="lib-body">
+          <div class="grid" id="libraryGrid" data-view="three">
+            <div class="cell current"><span class="art art--lowtide"></span><div class="cell-text"><span class="cell-title">Low Tide</span><span class="cell-meta">Harbor Lights · 2004</span></div></div>
+            <div class="cell"><span class="art art--fieldnotes"></span><div class="cell-text"><span class="cell-title">Field Notes</span><span class="cell-meta">North Signal · 2019</span></div></div>
+            <div class="cell"><span class="art art--paperradio"></span><div class="cell-text"><span class="cell-title">Paper Radio</span><span class="cell-meta">Sable Coast · 2022</span></div></div>
+            <div class="cell"><span class="art art--quiethours"></span><div class="cell-text"><span class="cell-title">The Quiet Hours</span><span class="cell-meta">Harbor Lights · 2011</span></div></div>
+            <div class="cell"><span class="art art--saltair"></span><div class="cell-text"><span class="cell-title">Salt Air</span><span class="cell-meta">Harbor Lights · 2007</span></div></div>
+            <div class="cell"><span class="art art--nightferry"></span><div class="cell-text"><span class="cell-title">Night Ferry</span><span class="cell-meta">North Signal · 2015</span></div></div>
+            <div class="cell"><span class="art art--nightferry"></span><div class="cell-text"><span class="cell-title">Harbor Glass</span><span class="cell-meta">Sable Coast · 2020</span></div></div>
+            <div class="cell"><span class="art art--saltair"></span><div class="cell-text"><span class="cell-title">Moth Season</span><span class="cell-meta">North Signal · 2018</span></div></div>
+            <div class="cell"><span class="art art--quiethours"></span><div class="cell-text"><span class="cell-title">Low Season</span><span class="cell-meta">Harbor Lights · 2013</span></div></div>
+            <div class="cell"><span class="art art--paperradio"></span><div class="cell-text"><span class="cell-title">Paper Moon</span><span class="cell-meta">Sable Coast · 2021</span></div></div>
+            <div class="cell"><span class="art art--fieldnotes"></span><div class="cell-text"><span class="cell-title">Quiet Signal</span><span class="cell-meta">North Signal · 2023</span></div></div>
+            <div class="cell"><span class="art art--lowtide"></span><div class="cell-text"><span class="cell-title">Glass Harbor</span><span class="cell-meta">Harbor Lights · 2016</span></div></div>
+          </div>
+        </div>
+      </section>
+
+      <!-- Playlists -->
+      <section class="page" data-title="playlists" data-index="2" role="group" aria-roledescription="slide" aria-label="3 of 6: playlists">
+        <header class="hub">
+          <div class="hub-top">
+            <button class="hub-title" data-menu aria-haspopup="dialog" aria-expanded="false">
+              <span class="h-title">playlists</span>
+              <svg class="icon icon-22 chev"><use href="#i-chev-down"/></svg>
+            </button>
+            <button class="next-peek" data-next="3" aria-label="Go to insights"><span>insights</span></button>
+          </div>
+          <div class="hub-sub">
+            <span class="crumbs">4 lists</span>
+            <span class="actions">
+              <button class="ibtn" aria-label="New playlist"><svg class="icon"><use href="#i-add"/></svg></button>
+              <button class="ibtn" aria-label="More"><svg class="icon"><use href="#i-more"/></svg></button>
+            </span>
+          </div>
+        </header>
+        <div class="section-body">
+          <div class="list-row"><span class="art art--paperradio"></span><span class="list-text"><span class="list-title">Late Night</span><span class="list-meta">12 tracks · 48 min</span></span><svg class="icon icon-22 list-end"><use href="#i-chev-right"/></svg></div>
+          <div class="list-row"><span class="art art--fieldnotes"></span><span class="list-text"><span class="list-title">Field Recordings</span><span class="list-meta">8 tracks · 31 min</span></span><svg class="icon icon-22 list-end"><use href="#i-chev-right"/></svg></div>
+          <div class="list-row"><span class="art art--saltair"></span><span class="list-text"><span class="list-title">Kitchen</span><span class="list-meta">23 tracks · 1h 26</span></span><svg class="icon icon-22 list-end"><use href="#i-chev-right"/></svg></div>
+          <div class="list-row"><span class="art art--quiethours"></span><span class="list-text"><span class="list-title">Sunday Drive</span><span class="list-meta">17 tracks · 1h 04</span></span><svg class="icon icon-22 list-end"><use href="#i-chev-right"/></svg></div>
+        </div>
+      </section>
+
+      <!-- Insights -->
+      <section class="page" data-title="insights" data-index="3" role="group" aria-roledescription="slide" aria-label="4 of 6: insights">
+        <header class="hub">
+          <div class="hub-top">
+            <button class="hub-title" data-menu aria-haspopup="dialog" aria-expanded="false">
+              <span class="h-title">insights</span>
+              <svg class="icon icon-22 chev"><use href="#i-chev-down"/></svg>
+            </button>
+            <button class="next-peek" data-next="4" aria-label="Go to sources"><span>sources</span></button>
+          </div>
+          <div class="hub-sub">
+            <span class="crumbs">this month</span>
+            <span class="actions"><button class="ibtn" aria-label="More"><svg class="icon"><use href="#i-more"/></svg></button></span>
+          </div>
+        </header>
+        <div class="section-body">
+          <p class="big-stat">128h</p>
+          <p class="stat-label">listening this month</p>
+          <div class="stat-row">
+            <div><div class="stat-small">2,430</div><div class="stat-small-label">plays</div></div>
+            <div><div class="stat-small">312</div><div class="stat-small-label">albums</div></div>
+            <div><div class="stat-small">184</div><div class="stat-small-label">artists</div></div>
+          </div>
+          <div style="margin-block-start:28px"></div>
+          <div class="numbered"><span class="num">01</span><span class="name">Harbor Lights</span><span class="count">412 plays</span></div>
+          <div class="numbered"><span class="num">02</span><span class="name">North Signal</span><span class="count">287 plays</span></div>
+          <div class="numbered"><span class="num">03</span><span class="name">Sable Coast</span><span class="count">203 plays</span></div>
+        </div>
+      </section>
+
+      <!-- Sources -->
+      <section class="page" data-title="sources" data-index="4" role="group" aria-roledescription="slide" aria-label="5 of 6: sources">
+        <header class="hub">
+          <div class="hub-top">
+            <button class="hub-title" data-menu aria-haspopup="dialog" aria-expanded="false">
+              <span class="h-title">sources</span>
+              <svg class="icon icon-22 chev"><use href="#i-chev-down"/></svg>
+            </button>
+            <button class="next-peek" data-next="5" aria-label="Go to settings"><span>settings</span></button>
+          </div>
+          <div class="hub-sub">
+            <span class="crumbs">3 active</span>
+            <span class="actions">
+              <button class="ibtn" aria-label="Add source"><svg class="icon"><use href="#i-add"/></svg></button>
+              <button class="ibtn" aria-label="More"><svg class="icon"><use href="#i-more"/></svg></button>
+            </span>
+          </div>
+        </header>
+        <div class="section-body">
+          <div class="list-row"><span class="art art--lowtide"></span><span class="list-text"><span class="list-title">Free Music Archive</span><span class="list-meta">v0.3.18 · active</span></span><svg class="icon icon-22 list-end"><use href="#i-chev-right"/></svg></div>
+          <div class="list-row"><span class="art art--fieldnotes"></span><span class="list-text"><span class="list-title">ccMixter</span><span class="list-meta">v0.3.18 · active</span></span><svg class="icon icon-22 list-end"><use href="#i-chev-right"/></svg></div>
+          <div class="list-row"><span class="art art--paperradio"></span><span class="list-text"><span class="list-title">Audius</span><span class="list-meta">v0.3.18 · active</span></span><svg class="icon icon-22 list-end"><use href="#i-chev-right"/></svg></div>
+          <div class="list-row"><span class="art art--nightferry"></span><span class="list-text"><span class="list-title">Octave</span><span class="list-meta">v0.3.18 · disabled</span></span><svg class="icon icon-22 list-end"><use href="#i-chev-right"/></svg></div>
+        </div>
+      </section>
+
+      <!-- Settings -->
+      <section class="page" data-title="settings" data-index="5" role="group" aria-roledescription="slide" aria-label="6 of 6: settings">
+        <header class="hub">
+          <button class="hub-title" data-menu aria-haspopup="dialog" aria-expanded="false">
+            <span class="h-title">settings</span>
+            <svg class="icon icon-22 chev"><use href="#i-chev-down"/></svg>
+          </button>
+          <div class="hub-sub">
+            <span class="crumbs">relay 1.0</span>
+          </div>
+        </header>
+        <div class="section-body">
+          <div class="list-row"><span class="list-text"><span class="list-title">Playback</span><span class="list-meta">queue, speed, fades</span></span><svg class="icon icon-22 list-end"><use href="#i-chev-right"/></svg></div>
+          <div class="list-row"><span class="list-text"><span class="list-title">Audio</span><span class="list-meta">equalizer, loudness, haptics</span></span><svg class="icon icon-22 list-end"><use href="#i-chev-right"/></svg></div>
+          <div class="list-row"><span class="list-text"><span class="list-title">Storage</span><span class="list-meta">music folder, downloads</span></span><svg class="icon icon-22 list-end"><use href="#i-chev-right"/></svg></div>
+          <div class="list-row"><span class="list-text"><span class="list-title">Appearance</span><span class="list-meta">theme packs, wallpaper</span></span><svg class="icon icon-22 list-end"><use href="#i-chev-right"/></svg></div>
+          <div class="list-row"><span class="list-text"><span class="list-title">Backup</span><span class="list-meta">local and LAN</span></span><svg class="icon icon-22 list-end"><use href="#i-chev-right"/></svg></div>
+          <div class="list-row"><span class="list-text"><span class="list-title">About</span><span class="list-meta">diagnostics, licences</span></span><svg class="icon icon-22 list-end"><use href="#i-chev-right"/></svg></div>
+        </div>
+      </section>
+
+    </div>
+
+    <!-- Compact header once a page is scrolled -->
+    <div class="compact-bar" id="compactBar" inert>
+      <button data-menu aria-haspopup="dialog" aria-expanded="false" aria-label="Open sections">
+        <span class="compact-title" id="compactTitle">library</span>
+        <svg class="icon icon-22 chev"><use href="#i-chev-down"/></svg>
+      </button>
+    </div>
+
+    <!-- Mini player -->
+    <div class="mini hidden" id="mini" inert>
+      <div class="mini-progress"><span></span></div>
+      <div class="mini-row">
+        <span class="art art--lowtide"></span>
+        <div class="mini-text"><span class="mini-title">Salt Air</span><span class="mini-meta">Harbor Lights</span></div>
+        <button class="ibtn" aria-label="Previous"><svg class="icon"><use href="#i-prev"/></svg></button>
+        <button class="ibtn" aria-label="Pause"><svg class="icon"><use href="#i-pause"/></svg></button>
+        <button class="ibtn" aria-label="Next"><svg class="icon"><use href="#i-next"/></svg></button>
+        <button class="ibtn" aria-label="Save"><svg class="icon"><use href="#i-heart"/></svg></button>
+      </div>
+    </div>
+
+    <!-- Frosted sections menu -->
+    <div class="menu" id="menu" role="dialog" aria-modal="true" aria-labelledby="menuLabel" aria-hidden="true" tabindex="-1" inert>
+      <div class="menu-head">
+        <span class="label" id="menuLabel">Sections</span>
+        <button class="ibtn" id="closeMenu" aria-label="Close sections"><svg class="icon"><use href="#i-close"/></svg></button>
+      </div>
+      <button class="menu-row" data-target="0"><svg class="icon"><use href="#i-play"/></svg><span><span class="menu-label">now playing</span><span class="menu-sub">what's on</span></span><svg class="icon icon-22 chev"><use href="#i-chev-right"/></svg></button>
+      <button class="menu-row" data-target="1"><svg class="icon"><use href="#i-library"/></svg><span><span class="menu-label">library</span><span class="menu-sub">albums · artists · songs</span></span><svg class="icon icon-22 chev"><use href="#i-chev-right"/></svg></button>
+      <button class="menu-row" data-target="2"><svg class="icon"><use href="#i-queue"/></svg><span><span class="menu-label">playlists</span><span class="menu-sub">your lists</span></span><svg class="icon icon-22 chev"><use href="#i-chev-right"/></svg></button>
+      <button class="menu-row" data-target="3"><svg class="icon"><use href="#i-insights"/></svg><span><span class="menu-label">insights</span><span class="menu-sub">listening</span></span><svg class="icon icon-22 chev"><use href="#i-chev-right"/></svg></button>
+      <button class="menu-row" data-target="4"><svg class="icon"><use href="#i-extension"/></svg><span><span class="menu-label">sources</span><span class="menu-sub">extensions</span></span><svg class="icon icon-22 chev"><use href="#i-chev-right"/></svg></button>
+      <button class="menu-row" data-target="5"><svg class="icon"><use href="#i-settings"/></svg><span><span class="menu-label">settings</span><span class="menu-sub">relay</span></span><svg class="icon icon-22 chev"><use href="#i-chev-right"/></svg></button>
+    </div>
+
+    <p class="sr-only" id="pagerStatus" role="status" aria-live="polite"></p>
+
+  </div>
+  <p class="caption">drag / swipe · tap the giant title for sections · library icon cycles 3-up / 2-up / list</p>
+  <p class="foot">Icons: Material Icons, Apache-2.0.</p>
+</main>
+
+<script>
+  const phone = document.getElementById('phone');
+  const pager = document.getElementById('pager');
+  const pages = [...pager.querySelectorAll('.page')];
+  const mini = document.getElementById('mini');
+  const menu = document.getElementById('menu');
+  const menuRows = [...menu.querySelectorAll('.menu-row')];
+  const viewToggle = document.getElementById('viewToggle');
+  const libraryGrid = document.getElementById('libraryGrid');
+  const reduceMotion = window.matchMedia('(prefers-reduced-motion: reduce)');
+  const views = ['three', 'two', 'list'];
+  const viewIcons = { three: '#i-grid', two: '#i-agenda', list: '#i-list' };
+  let currentIndex = 0;
+  let viewIndex = 0;
+  let scrollFrame = 0;
+  let drag = null;
+  const compactBar = document.getElementById('compactBar');
+  const compactTitle = document.getElementById('compactTitle');
+  const pagerStatus = document.getElementById('pagerStatus');
+  let lastMenuTrigger = null;
+  let announceTimer = 0;
+  let announcedIndex = 0;
+
+  function pageWidth() {
+    return pages[0].getBoundingClientRect().width;
+  }
+
+  function setCurrent(index) {
+    currentIndex = Math.max(0, Math.min(pages.length - 1, index));
+    mini.classList.toggle('hidden', currentIndex === 0);
+    mini.inert = currentIndex === 0;
+    menuRows.forEach((row) => {
+      const isCurrent = Number(row.dataset.target) === currentIndex;
+      row.classList.toggle('current', isCurrent);
+      if (isCurrent) row.setAttribute('aria-current', 'page');
+      else row.removeAttribute('aria-current');
+    });
+    updateCompact();
+    scheduleAnnouncement();
+  }
+
+  function scheduleAnnouncement() {
+    if (currentIndex === announcedIndex) return;
+    clearTimeout(announceTimer);
+    announceTimer = setTimeout(() => {
+      announcedIndex = currentIndex;
+      pagerStatus.textContent = `Section ${currentIndex + 1} of ${pages.length}: ${pages[currentIndex].dataset.title}`;
+    }, 260);
+  }
+
+  function updateCompact() {
+    const page = pages[currentIndex];
+    const visible = Boolean(page && page.scrollTop > 48 && !menu.classList.contains('open'));
+    compactBar.classList.toggle('visible', visible);
+    compactBar.inert = !visible;
+    compactTitle.textContent = page ? page.dataset.title : 'library';
+  }
+
+  function update() {
+    const width = pageWidth();
+    if (!width) return;
+    const index = Math.round(pager.scrollLeft / width);
+    if (index !== currentIndex) setCurrent(index);
+    const progress = Math.max(0, Math.min(1, pager.scrollLeft / width));
+    document.documentElement.style.setProperty('--px', progress.toFixed(3));
+  }
+
+  function onScroll() {
+    if (scrollFrame) return;
+    scrollFrame = requestAnimationFrame(() => {
+      scrollFrame = 0;
+      update();
+    });
+  }
+
+  function scrollToPage(index, smooth) {
+    const width = pageWidth();
+    pager.scrollTo({
+      left: index * width,
+      behavior: smooth && !reduceMotion.matches ? 'smooth' : 'auto',
+    });
+    setCurrent(index);
+  }
+
+  function openMenu() {
+    lastMenuTrigger = document.activeElement;
+    menu.classList.add('open');
+    menu.setAttribute('aria-hidden', 'false');
+    document.querySelectorAll('[data-menu]').forEach((button) => button.setAttribute('aria-expanded', 'true'));
+    pager.inert = true;
+    mini.inert = true;
+    compactBar.inert = true;
+    menu.inert = false;
+    setCurrent(currentIndex);
+    menu.focus({ preventScroll: true });
+  }
+
+  function closeMenu(restoreFocus = true) {
+    menu.classList.remove('open');
+    menu.setAttribute('aria-hidden', 'true');
+    document.querySelectorAll('[data-menu]').forEach((button) => button.setAttribute('aria-expanded', 'false'));
+    menu.inert = true;
+    pager.inert = false;
+    mini.inert = currentIndex === 0;
+    updateCompact();
+    if (restoreFocus && lastMenuTrigger) {
+      lastMenuTrigger.focus({ preventScroll: true });
+    }
+  }
+
+  pager.addEventListener('scroll', onScroll, { passive: true });
+  pages.forEach((page) => page.addEventListener('scroll', () => {
+    if (page === pages[currentIndex]) updateCompact();
+  }, { passive: true }));
+
+  document.querySelectorAll('.hub-title').forEach((button) => {
+    button.addEventListener('click', openMenu);
+  });
+  document.querySelectorAll('.next-peek').forEach((button) => {
+    button.addEventListener('click', () => scrollToPage(Number(button.dataset.next), true));
+  });
+  compactBar.querySelector('button').addEventListener('click', openMenu);
+  document.getElementById('closeMenu').addEventListener('click', closeMenu);
+  menu.addEventListener('click', (event) => {
+    if (event.target === menu) closeMenu();
+  });
+  menuRows.forEach((row) => {
+    row.addEventListener('click', () => {
+      const target = Number(row.dataset.target);
+      closeMenu(false);
+      scrollToPage(target, true);
+      pager.focus({ preventScroll: true });
+    });
+  });
+
+  menu.addEventListener('keydown', (event) => {
+    if (event.key !== 'Tab') return;
+    const focusable = [...menu.querySelectorAll('button:not([disabled])')];
+    if (!focusable.length) return;
+    const first = focusable[0];
+    const last = focusable[focusable.length - 1];
+    if (event.shiftKey && (document.activeElement === first || document.activeElement === menu)) {
+      event.preventDefault();
+      last.focus();
+    } else if (!event.shiftKey && document.activeElement === last) {
+      event.preventDefault();
+      first.focus();
+    }
+  });
+
+  viewToggle.addEventListener('click', () => {
+    viewIndex = (viewIndex + 1) % views.length;
+    const view = views[viewIndex];
+    libraryGrid.dataset.view = view;
+    viewToggle.querySelector('use').setAttribute('href', viewIcons[view]);
+    viewToggle.setAttribute('aria-label', `Change library view (current: ${view === 'three' ? '3-up' : view === 'two' ? '2-up' : 'list'})`);
+    if (currentIndex === 1) {
+      libraryGrid.parentElement.scrollTo({ top: 0, behavior: reduceMotion.matches ? 'auto' : 'smooth' });
+    }
+  });
+
+  document.querySelectorAll('[data-play]').forEach((button) => {
+    button.addEventListener('click', () => {
+      const use = button.querySelector('use');
+      const playing = use.getAttribute('href') === '#i-pause';
+      use.setAttribute('href', playing ? '#i-play' : '#i-pause');
+      button.setAttribute('aria-label', playing ? 'Play' : 'Pause');
+    });
+  });
+
+  document.querySelectorAll('.ibtn[aria-label="Save"]').forEach((button) => {
+    button.addEventListener('click', () => {
+      const saved = button.classList.toggle('accent');
+      button.setAttribute('aria-pressed', String(saved));
+    });
+  });
+
+  document.addEventListener('keydown', (event) => {
+    if (event.key === 'Escape') {
+      closeMenu();
+      return;
+    }
+    if (menu.classList.contains('open')) return;
+    if (event.target.closest('button, a, input, select, textarea, [contenteditable]')) return;
+    if (event.key === 'ArrowRight' && currentIndex < pages.length - 1) {
+      scrollToPage(currentIndex + 1, true);
+    }
+    if (event.key === 'ArrowLeft' && currentIndex > 0) {
+      scrollToPage(currentIndex - 1, true);
+    }
+  });
+
+  // Mouse drag mirrors the touch swipe for desktop previews.
+  pager.addEventListener('pointerdown', (event) => {
+    if (event.pointerType !== 'mouse') return;
+    drag = { x: event.clientX, left: pager.scrollLeft, id: event.pointerId };
+    pager.classList.add('dragging');
+    pager.setPointerCapture(event.pointerId);
+  });
+  pager.addEventListener('pointermove', (event) => {
+    if (!drag || event.pointerId !== drag.id) return;
+    pager.scrollLeft = drag.left - (event.clientX - drag.x);
+  });
+  function endDrag(event) {
+    if (!drag || event.pointerId !== drag.id) return;
+    drag = null;
+    pager.classList.remove('dragging');
+    const width = pageWidth();
+    scrollToPage(Math.round(pager.scrollLeft / width), true);
+  }
+  pager.addEventListener('pointerup', endDrag);
+  pager.addEventListener('pointercancel', endDrag);
+
+  // Preview states for screenshots: ?page=1, ?menu=1.
+  const params = new URLSearchParams(location.search);
+  const startPage = Math.max(0, Math.min(pages.length - 1, Number(params.get('page') || 0)));
+  if (startPage > 0) {
+    requestAnimationFrame(() => {
+      scrollToPage(startPage, false);
+      update();
+      mini.classList.remove('hidden');
+      mini.style.transition = 'none';
+    });
+  }
+  if (params.get('menu') === '1') {
+    requestAnimationFrame(() => {
+      menu.style.transition = 'none';
+      openMenu();
+    });
+  }
+  reduceMotion.addEventListener?.('change', () => {
+    document.documentElement.style.setProperty('--px', '0');
+  });
+  update();
+</script>
+</body>
+</html>

@@ -11,13 +11,14 @@ Start with [the project guide](docs/PROJECT_GUIDE.md) for the module map, runtim
 ## Download
 
 Releases are published on the GitHub Releases page as a signed APK with
-SHA-256 checksums. Install with:
+SHA-256 checksums. Download the APK and open it on the device; the system
+installer handles the rest.
+
+For a locally built debug APK:
 
 ```sh
 adb install -r androidApp/build/outputs/apk/debug/androidApp-debug.apk
 ```
-
-or transfer the release APK to your device and open it.
 
 A desktop build for macOS exists (`./gradlew :desktopApp:packageDmg`) but is
 not yet part of a stable release.

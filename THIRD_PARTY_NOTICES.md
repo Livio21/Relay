@@ -33,6 +33,12 @@ Apache License 2.0 text: <https://www.apache.org/licenses/LICENSE-2.0.txt>
 | --- | --- | --- |
 | org.json:json | 20240303 | JSON License (MIT-style, with the "shall be used for Good, not Evil" clause). Used in unit tests only; not shipped in release artifacts. |
 
+## Icons
+
+Material Icons by Google LLC, licensed under Apache-2.0. Relay vendors a small,
+bounded subset of path data in `composeApp/src/commonMain/kotlin/dev/relay/music/ui/RelayIcons.kt`
+for transport, navigation and section actions. Theme packs cannot supply icons.
+
 ## Vendored code
 
 | Work | Location | License |
@@ -45,3 +51,22 @@ Kotlin 2.4.10, Kotlin Multiplatform, Compose compiler plugin, Android Gradle
 Plugin 9.1.1, KSP, Gradle 9.3.1 and the foojay toolchains resolver plugin are
 build-time tooling distributed under Apache-2.0 terms. They are not part of
 the application's distributed code.
+
+## Rose ornament (1905)
+
+- Source: Wikimedia Commons, [File:Rose ornament, 1905.svg](https://commons.wikimedia.org/wiki/File:Rose_ornament,_1905.svg)
+- Artist: anonymous, published in *Le prix courant*, 1905
+- License: public domain (published before 1931, anonymous)
+- Use: cropped and recolored as the translucent rose tattoo in the sections menu, and in the sections-menu mockup.
+
+## Hilma af Klint, *The Swan* (1915)
+
+- Source: Wikimedia Commons, [File:Hilma af Klint Svanen.jpg](https://commons.wikimedia.org/wiki/File:Hilma_af_Klint_Svanen.jpg)
+- License: public domain
+- Use: documentation mockup only (`docs/mockups/sections-menu-2.*`), not bundled in the app.
+
+## Inter
+
+- Source: [The Inter Project Authors / Google Fonts](https://github.com/google/fonts/tree/main/ofl/inter)
+- License: SIL Open Font License 1.1
+- Use: bundled variable UI font (`composeResources/font/inter_variable.ttf`), weights 100–900.

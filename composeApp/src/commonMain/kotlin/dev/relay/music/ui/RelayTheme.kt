@@ -94,7 +94,7 @@ object RelayHaptics {
 object RelayPresentation {
     var libraryLayout by mutableStateOf(ThemeLibraryLayout.LIST); internal set
     var playerLayout by mutableStateOf(ThemePlayerLayout.STANDARD); internal set
-    var transportLayout by mutableStateOf(ThemeTransportLayout.TEXT_ROW); internal set
+    var transportLayout by mutableStateOf(ThemeTransportLayout.CENTERED_ICONS); internal set
     var showIndexRail by mutableStateOf(true); internal set
     var background by mutableStateOf(ThemeBackground.NONE); internal set
     var backgroundAsset by mutableStateOf<String?>(null); internal set
@@ -142,9 +142,14 @@ fun Modifier.relayButtonChrome(fillColor: Color = RelayColors.Panel): Modifier =
         )
 
 private fun ThemeFont.asFontFamily(): FontFamily = when (this) {
-    ThemeFont.SANS -> FontFamily.SansSerif
+    ThemeFont.SANS -> RelayFonts.sans
     ThemeFont.SERIF -> FontFamily.Serif
     ThemeFont.MONO -> FontFamily.Monospace
+}
+
+/** Runtime-loaded display family. Falls back to the platform sans until the bundled font loads. */
+object RelayFonts {
+    var sans: FontFamily = FontFamily.SansSerif
 }
 
 /** Computed per read so text styles always carry the active palette, scale, and case. */
@@ -179,6 +184,54 @@ object RelayType {
             fontSize = (11f * scale).sp,
             letterSpacing = (0.5f * scale).sp,
         )
+
+    // Metro-first roles. The existing roles above stay for dense screens and theme packs.
+    val SectionTitle: TextStyle
+        get() = TextStyle(
+            color = RelayColors.Paper,
+            fontFamily = RelayChrome.contentFont.asFontFamily(),
+            fontSize = (48f * scale).sp,
+            lineHeight = (40f * scale).sp,
+            fontWeight = FontWeight.ExtraLight,
+            letterSpacing = (-1.4f * scale).sp,
+        )
+    val HeroTitle: TextStyle
+        get() = TextStyle(
+            color = RelayColors.Paper,
+            fontFamily = RelayChrome.contentFont.asFontFamily(),
+            fontSize = (40f * scale).sp,
+            lineHeight = (38f * scale).sp,
+            fontWeight = FontWeight.ExtraLight,
+            letterSpacing = (-0.6f * scale).sp,
+        )
+    val HeroArtist: TextStyle
+        get() = TextStyle(
+            color = RelayColors.Paper,
+            fontFamily = RelayChrome.contentFont.asFontFamily(),
+            fontSize = (25f * scale).sp,
+            lineHeight = (27f * scale).sp,
+            fontWeight = FontWeight.Light,
+        )
+    val Kicker: TextStyle
+        get() = TextStyle(
+            color = RelayColors.Muted,
+            fontFamily = RelayChrome.utilityFont.asFontFamily(),
+            fontSize = (9f * scale).sp,
+            letterSpacing = (0.9f * scale).sp,
+        )
+    val TileTitle: TextStyle
+        get() = TextStyle(
+            color = RelayColors.Paper,
+            fontFamily = RelayChrome.contentFont.asFontFamily(),
+            fontSize = (13f * scale).sp,
+            lineHeight = (16f * scale).sp,
+            fontWeight = FontWeight.SemiBold,
+            letterSpacing = (-0.1f * scale).sp,
+        )
+    val TileTitleLarge: TextStyle
+        get() = TileTitle.copy(fontSize = (15f * scale).sp, lineHeight = (18f * scale).sp)
+    val MiniTitle: TextStyle
+        get() = TileTitleLarge.copy(fontSize = (14f * scale).sp)
 }
 
 /**
@@ -211,7 +264,7 @@ fun applyThemePack(pack: ThemePack?) {
         RelayHaptics.replace(emptyMap())
         RelayPresentation.libraryLayout = ThemeLibraryLayout.LIST
         RelayPresentation.playerLayout = ThemePlayerLayout.STANDARD
-        RelayPresentation.transportLayout = ThemeTransportLayout.TEXT_ROW
+        RelayPresentation.transportLayout = ThemeTransportLayout.CENTERED_ICONS
         RelayPresentation.showIndexRail = true
         RelayPresentation.background = ThemeBackground.NONE
         RelayPresentation.backgroundAsset = null
@@ -386,9 +439,9 @@ private fun duotoneColorMatrix(low: Color, high: Color, strength: Float): ColorM
 }
 
 private val DEFAULT_INK = Color(0xFF050505)
-private val DEFAULT_PANEL = Color(0xFF101010)
-private val DEFAULT_LINE = Color(0xFF303030)
-private val DEFAULT_PAPER = Color(0xFFF1F1EC)
-private val DEFAULT_MUTED = Color(0xFF92928B)
-private val DEFAULT_SIGNAL = Color(0xFF4B88FF)
+private val DEFAULT_PANEL = Color(0xFF0E0E0E)
+private val DEFAULT_LINE = Color(0xFF414141)
+private val DEFAULT_PAPER = Color(0xFFFBFBF5)
+private val DEFAULT_MUTED = Color(0xFFC4C4BA)
+private val DEFAULT_SIGNAL = Color(0xFFFF4F00)
 private val DEFAULT_DANGER = Color(0xFFFF453A)

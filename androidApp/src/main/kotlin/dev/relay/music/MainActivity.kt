@@ -763,6 +763,7 @@ class MainActivity : ComponentActivity() {
                 ),
                 actions = RelayAppActions(
                     onTrackSelected = ::selectTrack,
+                    onPlayTracks = { list, index -> playerEngine.setQueue(list, index) },
                     onPlayPause = { if (playbackState.isPlaying) playerEngine.pause() else playerEngine.play() },
                     onPrevious = playerEngine::skipPrevious,
                     onNext = playerEngine::skipNext,

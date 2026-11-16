@@ -16,6 +16,9 @@ kotlin {
         compilerOptions {
             jvmTarget.set(JvmTarget.JVM_17)
         }
+        androidResources {
+            enable = true
+        }
     }
 
     jvm("desktop") {
@@ -30,6 +33,7 @@ kotlin {
     sourceSets {
         commonMain.dependencies {
             implementation(libs.compose.foundation)
+            implementation(compose.components.resources)
             implementation(libs.coil.compose)
             implementation(libs.kotlinx.coroutines.core)
             implementation(libs.kotlinx.serialization.json)
@@ -37,6 +41,12 @@ kotlin {
         }
         commonTest.dependencies {
             implementation(kotlin("test"))
+        }
+        val desktopTest by getting {
+            dependencies {
+                // Offscreen ComposeScene screenshots; test-only, never shipped.
+                implementation(compose.desktop.currentOs)
+            }
         }
     }
 }

@@ -1,0 +1,90 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="dark">
+<title>Relay — sections menu, lower</title>
+<style>
+  :root{--ink:#050505;--panel:#0e0e0e;--line:#414141;--paper:#fbfbf5;--muted:#c4c4ba;--accent:#ff4f00;--sans:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif;--mono:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}
+  *{box-sizing:border-box}
+  html{background:#151515}
+  body{margin:0;background:#151515;color:var(--paper);font-family:var(--sans);-webkit-font-smoothing:antialiased;overflow-wrap:anywhere}
+  .page-heading{max-inline-size:620px;margin-inline:auto;padding:36px 24px 8px}
+  .kicker{margin:0 0 8px;font:11px/1 var(--mono);letter-spacing:.08em;text-transform:uppercase;color:var(--muted)}
+  h1{margin:0;font-size:28px;line-height:1.05;font-weight:700;letter-spacing:-.01em}
+  .dek{margin:8px 0 0;font-size:12px;line-height:1.55;color:var(--muted)}
+  .stage{max-inline-size:620px;margin-inline:auto;padding:20px 24px 32px;display:flex;flex-direction:column;align-items:center;gap:10px}
+  .phone{inline-size:390px;block-size:844px;background:var(--ink);border:1px solid var(--line);position:relative;overflow:hidden}
+  .caption{margin:0;align-self:flex-start;font:9px/1.4 var(--mono);letter-spacing:.05em;text-transform:uppercase;color:var(--muted)}
+  .icon{inline-size:24px;block-size:24px;fill:currentColor;display:block;flex:none}
+  .ibtn{inline-size:48px;block-size:48px;display:inline-flex;align-items:center;justify-content:center;border:0;background:transparent;color:var(--paper);padding:0;flex:none}
+  .muted{color:var(--muted)}
+  .art{position:absolute;overflow:hidden;background:#17403d}
+  .art::before,.art::after{content:"";position:absolute;display:block}
+  .art--lowtide::before{inset-inline:12%;inset-block-start:22%;block-size:16%;background:#d7dfc9}
+  .art--lowtide::after{inline-size:38%;aspect-ratio:1;border-radius:50%;background:#e6c48a;inset-inline-end:14%;inset-block-end:16%}
+
+  .backdrop{position:absolute;inset:0;overflow:hidden;background:var(--ink)}
+  .cover-art{position:absolute;inset:0;inline-size:100%;block-size:100%;object-fit:cover;filter:blur(15px) saturate(1.06);opacity:.88;transform:scale(1.04);transform-origin:center}
+  .backdrop .wash{position:absolute;inset:0;background:linear-gradient(to bottom,rgba(5,5,5,.08) 0%,rgba(5,5,5,.20) 30%,rgba(5,5,5,.34) 48%,rgba(5,5,5,.46) 100%)}
+  .backdrop .section{position:absolute;left:24px;top:54px;font:200 56px/1 var(--sans);letter-spacing:-1px;color:var(--paper);opacity:.75;text-transform:lowercase}
+  .signature{position:absolute;left:24px;top:164px;font:italic 200 34px/1.05 var(--sans);letter-spacing:-.5px;color:var(--paper);opacity:.66;transform:rotate(-3deg);text-shadow:0 2px 18px rgba(0,0,0,.8)}
+  .signature small{display:block;margin-top:8px;font:8px/1 var(--mono);letter-spacing:.14em;text-transform:uppercase;color:var(--muted);opacity:.9;transform:rotate(3deg)}
+  .tattoo{position:absolute;right:24px;bottom:2px;inline-size:78px;block-size:78px;object-fit:contain;opacity:.62;filter:blur(.15px);pointer-events:none}
+    .bottom-frost{position:absolute;inset-inline:0;inset-block-end:0;block-size:84px;background:linear-gradient(to top,rgba(5,5,5,.01),rgba(5,5,5,0));backdrop-filter:blur(1.5px) saturate(.98);pointer-events:none}
+
+  .overlay{position:absolute;inset:0;background:transparent;display:grid;grid-template-rows:30% 60% 10%}
+  .list{grid-row:2;background:linear-gradient(to bottom,transparent 0%,rgba(6,6,6,.58) 8%,rgba(6,6,6,.58) 92%,transparent 100%);backdrop-filter:blur(26px) saturate(1.08);padding:0 16px 8px;display:flex;flex-direction:column;min-block-size:0}
+      .row{display:grid;grid-template-columns:26px 1fr 18px;align-items:center;gap:10px;flex:1;min-block-size:0;border-block-end:1px solid rgba(255,255,255,.10);color:var(--paper)}
+  .row.current{color:var(--accent)}
+  .label{display:block;font-size:26px;line-height:1;font-weight:200;letter-spacing:-.5px;text-transform:lowercase}
+  .sub{display:block;font:7px/1.2 var(--mono);letter-spacing:.08em;text-transform:uppercase;color:var(--muted);margin-top:3px}
+  .row.current .sub{color:var(--accent)}
+  .foot{block-size:22px;display:flex;align-items:center;justify-content:center;font:7px/1 var(--mono);letter-spacing:.1em;color:var(--muted);text-transform:uppercase}
+</style>
+</head>
+<body>
+<svg xmlns="http://www.w3.org/2000/svg" style="position:absolute;inline-size:0;block-size:0;overflow:hidden" aria-hidden="true">
+  <symbol id="i-play" viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></symbol>
+  <symbol id="i-library" viewBox="0 0 24 24"><path d="M20 2H8c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h12c1.1 0 2-.9 2-2V4c0-1.1-.9-2-2-2zm-2 5h-3v5.5c0 1.38-1.12 2.5-2.5 2.5S10 13.88 10 12.5s1.12-2.5 2.5-2.5c.57 0 1.08.19 1.5.51V5h4v2zM4 6H2v14c0 1.1.9 2 2 2h14v-2H4V6z"/></symbol>
+  <symbol id="i-queue" viewBox="0 0 24 24"><path d="M15,6H3v2h12V6z M15,10H3v2h12V10z M3,16h8v-2H3V16z M17,6v8.18C16.69,14.07,16.35,14,16,14c-1.66,0-3,1.34-3,3s1.34,3,3,3s3-1.34,3-3V8h3V6H17z"/></symbol>
+  <symbol id="i-insights" viewBox="0 0 24 24"><path d="M23,8c0,1.1-0.9,2-2,2c-0.18,0-0.35-0.02-0.51-0.07l-3.56,3.55C16.98,13.64,17,13.82,17,14c0,1.1-0.9,2-2,2s-2-0.9-2-2c0-0.18,0.02-0.36,0.07-0.52l-2.55-2.55C10.36,10.98,10.18,11,10,11s-0.36-0.02-0.52-0.07l-4.55,4.56C4.98,15.65,5,15.82,5,16c0,1.1-0.9,2-2,2s-2-0.9-2-2s0.9-2,2-2c0.18,0,0.35,0.02,0.51,0.07l4.56-4.55C8.02,9.36,8,9.18,8,9c0-1.1,0.9-2,2-2s2,0.9,2,2c0,0.18-0.02,0.36-0.07,0.52l2.55,2.55C14.64,12.02,14.82,12,15,12s0.36,0.02,0.52,0.07l3.55-3.56C19.02,8.35,19,8.18,19,8c0-1.1,0.9-2,2-2S23,6.9,23,8z"/></symbol>
+  <symbol id="i-extension" viewBox="0 0 24 24"><path d="M20.5 11H19V7c0-1.1-.9-2-2-2h-4V3.5C13 2.12 11.88 1 10.5 1S8 2.12 8 3.5V5H4c-1.1 0-1.99.9-1.99 2v3.8H3.5c1.49 0 2.7 1.21 2.7 2.7s-1.21 2.7-2.7 2.7H2V20c0 1.1.9 2 2 2h3.8v-1.5c0-1.49 1.21-2.7 2.7-2.7 1.49 0 2.7 1.21 2.7 2.7V22H17c1.1 0 2-.9 2-2v-4h1.5c1.38 0 2.5-1.12 2.5-2.5S21.88 11 20.5 11z"/></symbol>
+  <symbol id="i-settings" viewBox="0 0 24 24"><path d="M19.14,12.94c0.04-0.3,0.06-0.61,0.06-0.94c0-0.32-0.02-0.64-0.07-0.94l2.03-1.58c0.18-0.14,0.23-0.41,0.12-0.61l-1.92-3.32c-0.12-0.22-0.37-0.29-0.59-0.22l-2.39,0.96c-0.5-0.38-1.03-0.7-1.62-0.94L14.4,2.81c-0.04-0.24-0.24-0.41-0.48-0.41h-3.84c-0.24,0-0.43,0.17-0.47,0.41L9.25,5.35C8.66,5.59,8.12,5.92,7.63,6.29L5.24,5.33c-0.22-0.08-0.47,0-0.59,0.22L2.74,8.87C2.62,9.08,2.66,9.34,2.86,9.48l2.03,1.58C4.84,11.36,4.8,11.69,4.8,12s0.02,0.64,0.07,0.94l-2.03,1.58c-0.18,0.14-0.23,0.41-0.12,0.61l1.92,3.32c0.12,0.22,0.37,0.29,0.59,0.22l2.39-0.96c0.5,0.38,1.03,0.7,1.62,0.94l0.36,2.54c0.05,0.24,0.24,0.41,0.48,0.41h3.84c0.24,0,0.44-0.17,0.47-0.41l0.36-2.54c0.59-0.24,1.13-0.56,1.62-0.94l2.39,0.96c0.22,0.08,0.47,0,0.59-0.22l1.92-3.32c0.12-0.22,0.07-0.47-0.12-0.61L19.14,12.94z M12,15.6c-1.98,0-3.6-1.62-3.6-3.6s1.62-3.6,3.6-3.6s3.6,1.62,3.6,3.6S13.98,15.6,12,15.6z"/></symbol>
+  <symbol id="i-close" viewBox="0 0 24 24"><path d="M19 6.41L17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></symbol>
+  <symbol id="i-chev" viewBox="0 0 24 24"><path d="M10 6L8.59 7.41 13.17 12l-4.58 4.59L10 18l6-6z"/></symbol>
+</svg>
+
+<header class="page-heading">
+  <p class="kicker">Relay / sections menu</p>
+  <h1>Lower list, fading cover</h1>
+  <p class="dek">The list moves toward the thumb. The current cover fades behind it with a low-opacity signature from the local profile. Tapping the art area outside the list closes the menu.</p>
+</header>
+
+<main class="stage">
+  <div class="phone">
+    <div class="backdrop">
+      <img class="cover-art" src="hilma-cover.jpg" alt="">
+      <div class="wash"></div>
+      <div class="signature">Filan Fisteku</div>
+      <img class="tattoo" src="rose-tattoo.png" alt="">
+      <div class="bottom-frost"></div>
+    </div>
+    <div class="overlay">
+      <div class="top-gap"></div>
+      <div class="list">
+        <div class="row"><svg class="icon"><use href="#i-library"/></svg><span><span class="label">library</span><span class="sub">albums · artists · songs</span></span><svg class="icon muted"><use href="#i-chev"/></svg></div>
+        <div class="row current"><svg class="icon"><use href="#i-play"/></svg><span><span class="label">now playing</span><span class="sub">what's on</span></span><svg class="icon"><use href="#i-chev"/></svg></div>
+        <div class="row"><svg class="icon"><use href="#i-queue"/></svg><span><span class="label">playlists</span><span class="sub">your lists</span></span><svg class="icon muted"><use href="#i-chev"/></svg></div>
+        <div class="row"><svg class="icon"><use href="#i-insights"/></svg><span><span class="label">insights</span><span class="sub">listening</span></span><svg class="icon muted"><use href="#i-chev"/></svg></div>
+        <div class="row"><svg class="icon"><use href="#i-extension"/></svg><span><span class="label">extensions</span><span class="sub">sources</span></span><svg class="icon muted"><use href="#i-chev"/></svg></div>
+        <div class="row"><svg class="icon"><use href="#i-settings"/></svg><span><span class="label">settings</span><span class="sub">relay</span></span><svg class="icon muted"><use href="#i-chev"/></svg></div>
+      </div>
+      <div class="bottom-gap"></div>
+    </div>
+  </div>
+  <p class="caption">Sections · cover: Hilma af Klint, The Swan (1915), public domain · tattoo: Rose ornament (1905), public domain</p>
+</main>
+</body>
+</html>

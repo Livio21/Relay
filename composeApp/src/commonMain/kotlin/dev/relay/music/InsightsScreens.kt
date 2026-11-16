@@ -9,6 +9,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
@@ -23,11 +24,13 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import dev.relay.music.model.InsightEntry
 import dev.relay.music.model.InsightsRange
 import dev.relay.music.model.AlbumChartSpec
@@ -79,25 +82,35 @@ internal fun InsightsScreen(
                 modifier = Modifier.padding(top = 8.dp),
             )
         }
-        Row(modifier = Modifier.fillMaxWidth()) {
+        Row(modifier = Modifier.fillMaxWidth().padding(top = 8.dp)) {
             val haptics = LocalRelayHaptics.current
             InsightsRange.entries.forEach { candidate ->
-                BasicText(
-                    text = candidate.label(),
-                    style = RelayType.Utility.copy(
-                        color = if (candidate == range) RelayColors.Signal else RelayColors.Muted,
-                    ),
+                Column(
                     modifier = Modifier
                         .weight(1f)
-                        .heightIn(min = 48.dp)
-                        .border(1.dp, RelayColors.Line)
                         .semantics { contentDescription = "Show ${candidate.label()} insights" }
                         .clickable(role = Role.Tab) {
                             haptics.perform(HapticAction.TAB_CHANGE)
                             range = candidate
-                        }
-                        .padding(horizontal = 4.dp, vertical = 15.dp),
-                )
+                        },
+                ) {
+                    BasicText(
+                        text = candidate.label().lowercase(),
+                        style = RelayType.HeroArtist.copy(
+                            fontSize = 18.sp,
+                            lineHeight = 20.sp,
+                            color = if (candidate == range) RelayColors.Signal else RelayColors.Muted,
+                        ),
+                        maxLines = 1,
+                        modifier = Modifier.padding(vertical = 14.dp),
+                    )
+                    Box(
+                        Modifier
+                            .fillMaxWidth()
+                            .height(2.dp)
+                            .background(if (candidate == range) RelayColors.Signal else Color.Transparent),
+                    )
+                }
             }
         }
 
@@ -110,23 +123,25 @@ internal fun InsightsScreen(
             return@Column
         }
 
-        Column(modifier = Modifier.fillMaxWidth().padding(top = 16.dp).border(1.dp, RelayColors.Line).padding(12.dp)) {
-            BasicText("${insights.plays} PLAYS", style = RelayType.Title)
+        Column(modifier = Modifier.fillMaxWidth().padding(top = 24.dp)) {
+            BasicText(
+                text = "${insights.plays} plays",
+                style = RelayType.SectionTitle.copy(fontSize = 72.sp, lineHeight = 66.sp),
+            )
             BasicText(
                 text = if (insights.timedPlays > 0) {
                     "≈ ${formatListeningTime(insights.estimatedMs)} of music"
                 } else {
                     "Listening time unavailable — no track lengths recorded"
                 },
-                style = RelayType.Metadata,
+                style = RelayType.HeroArtist.copy(fontSize = 20.sp, lineHeight = 24.sp),
                 modifier = Modifier.padding(top = 4.dp),
             )
             BasicText(
-                text = "DATA SOURCE · THIS DEVICE'S PLAYBACK HISTORY",
-                style = RelayType.Utility.copy(color = RelayColors.Muted),
+                text = "local playback history",
+                style = RelayType.Kicker,
                 modifier = Modifier.padding(top = 8.dp),
             )
-            // The plan requires unknowns be visible rather than quietly excluded.
             if (insights.untimedPlays > 0) {
                 BasicText(
                     "${insights.untimedPlays} plays have no known length and are counted but not timed.",
@@ -257,7 +272,7 @@ private fun AlbumCharts(
     onExport: (AlbumChartSpec) -> Unit,
 ) {
     var size by remember { mutableStateOf(9) }
-    BasicText("ALBUM CHARTS", style = RelayType.Track, modifier = Modifier.padding(top = 24.dp, bottom = 8.dp))
+    BasicText("album charts", style = RelayType.SectionTitle.copy(fontSize = 28.sp, lineHeight = 30.sp), modifier = Modifier.padding(top = 24.dp, bottom = 8.dp))
     Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
         TransportAction(
             "SIZE · $size",
@@ -276,15 +291,18 @@ private fun AlbumCharts(
     }
     specs.forEach { spec ->
         val entries = remember(events, spec, nowEpochMs) { albumChartEntries(events, spec, nowEpochMs) }
-        Column(modifier = Modifier.fillMaxWidth().padding(top = 8.dp).border(1.dp, RelayColors.Line).padding(12.dp)) {
-            BasicText("${spec.range.label()} · ${spec.limit} ALBUMS", style = RelayType.Utility.copy(color = RelayColors.Muted))
+        Column(modifier = Modifier.fillMaxWidth().padding(top = 12.dp)) {
+            BasicText(
+                "${spec.range.label().lowercase()} · ${spec.limit} albums",
+                style = RelayType.Kicker,
+            )
             if (entries.isEmpty()) {
                 BasicText("No album data for this chart.", style = RelayType.Metadata, modifier = Modifier.padding(top = 4.dp))
             } else {
                 entries.forEachIndexed { index, entry ->
                     BasicText(
                         "${(index + 1).toString().padStart(2, '0')}  ${entry.label}",
-                        style = RelayType.Metadata,
+                        style = RelayType.Track,
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis,
                         modifier = Modifier.padding(top = 4.dp),
@@ -295,6 +313,7 @@ private fun AlbumCharts(
                 TransportAction("SHARE", "Create and share this album chart", entries.isNotEmpty(), { onExport(spec) }, Modifier.weight(1f))
                 TransportAction("REMOVE", "Remove this saved album chart", true, { onRemove(spec.id) }, Modifier.weight(1f))
             }
+            Rule()
         }
     }
 }
@@ -306,8 +325,8 @@ private fun ListeningCalendar(days: List<ListeningDay>, nowEpochMs: Long) {
     val today = nowEpochMs / DAY_MS
     val start = today - 27
     val peak = playsByDay.values.maxOrNull()?.coerceAtLeast(1) ?: 1
-    BasicText("LISTENING CALENDAR", style = RelayType.Track, modifier = Modifier.padding(top = 24.dp, bottom = 8.dp))
-    Column(modifier = Modifier.fillMaxWidth().border(1.dp, RelayColors.Line).padding(4.dp)) {
+    BasicText("listening calendar", style = RelayType.SectionTitle.copy(fontSize = 28.sp, lineHeight = 30.sp), modifier = Modifier.padding(top = 24.dp, bottom = 8.dp))
+    Column(modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp)) {
         (0 until 28).chunked(7).forEach { week ->
             Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(4.dp)) {
                 week.forEach { offset ->
@@ -329,34 +348,38 @@ private fun ListeningCalendar(days: List<ListeningDay>, nowEpochMs: Long) {
 @Composable
 private fun InsightsSection(title: String, entries: List<InsightEntry>) {
     if (entries.isEmpty()) return
-    BasicText(title, style = RelayType.Track, modifier = Modifier.padding(top = 24.dp, bottom = 8.dp))
+    BasicText(
+        title.lowercase(),
+        style = RelayType.SectionTitle.copy(fontSize = 28.sp, lineHeight = 30.sp),
+        modifier = Modifier.padding(top = 24.dp, bottom = 4.dp),
+    )
     entries.forEachIndexed { index, entry ->
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .heightIn(min = 48.dp)
-                .border(1.dp, RelayColors.Line)
-                .padding(horizontal = 12.dp, vertical = 12.dp),
+                .heightIn(min = 56.dp)
+                .padding(horizontal = 0.dp, vertical = 8.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
             BasicText(
                 text = (index + 1).toString().padStart(2, '0'),
                 style = RelayType.Utility.copy(color = RelayColors.Muted),
-                modifier = Modifier.width(28.dp),
+                modifier = Modifier.width(32.dp),
             )
             BasicText(
                 text = entry.label,
-                style = RelayType.Track,
+                style = RelayType.HeroArtist.copy(fontSize = 20.sp, lineHeight = 24.sp),
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
                 modifier = Modifier.weight(1f),
             )
             BasicText(
                 text = "${entry.plays}",
-                style = RelayType.Utility.copy(color = RelayColors.Signal),
+                style = RelayType.Metadata.copy(color = RelayColors.Signal),
                 modifier = Modifier.padding(start = 8.dp),
             )
         }
+        if (index != entries.lastIndex) Rule()
     }
 }
 
